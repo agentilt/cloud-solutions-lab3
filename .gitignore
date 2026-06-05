@@ -1,0 +1,24 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# CDK
+cdk.out/
+cdk.context.json
+.cdk.staging/
+
+# Env / secrets
+.env
+.env.local
+*.pem
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
