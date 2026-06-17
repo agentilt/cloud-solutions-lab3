@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloudcompass/contracts/architecture_spec.schema.json",
+  "title": "CloudCompass Architecture Spec",
+  "description": "DRAFT v0 contract from WS1 (Architecture Designer Agent) -> WS2 (CDK generator). Change requires WS1 sign-off.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_name", "pattern", "services"],
+  "properties": {
+    "project_name": {
+      "type": "string",
+      "description": "Human-readable project name; also used to derive stack/construct names.",
+      "pattern": "^[a-z][a-z0-9-]{1,48}$"
+    },
+    "pattern": {
+      "type": "string",
+      "description": "High-level architecture pattern the services compose into.",
+      "enum": ["serverless-web-application"],
+      "$comment": "TODO(diego+WS1): extend enum as we add supported patterns."
+    },
+    "deployment_boundary": {
+      "type": "string",
+      "description": "MVP stops at change-set-only. Documented in the spec for traceability.",
+      "enum": ["change-set-only"],
+      "default": "change-set-only"
+    },
+    "budget_monthly_usd": {
+      "type": ["number", "null"],
+      "description": "Optional monthly budget hint (informational; not enforced by the generator)."
+    },
+    "services": {
+      "type": "array",
+      "description": "Services to provision. Each `type` MUST exist in registry.TEMPLATE_REGISTRY.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/service" }
+    }
+  },
+  "$defs": {
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "logical_id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Canonical service key understood by the generator.",
+          "enum": ["s3_bucket", "lambda_api", "dynamodb_table"],
+          "$comment": "TODO(diego): keep in sync with registry.supported_types()."
+        },
+        "logical_id": {
+          "type": "string",
+          "description": "Unique CDK construct id within the project.",
+          "pattern": "^[A-Za-z][A-Za-z0-9]{1,63}$"
+        },
+        "config": {
+          "type": "object",
+          "description": "Template-specific parameters. Validated per-type in a later schema revision.",
+          "$comment": "TODO(diego): split into per-type sub-schemas (oneOf on `type`)."
+        }
+      }
+    }
+  }
+}

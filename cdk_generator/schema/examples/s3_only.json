@@ -1,0 +1,15 @@
+{
+  "project_name": "static-assets",
+  "pattern": "serverless-web-application",
+  "deployment_boundary": "change-set-only",
+  "services": [
+    {
+      "type": "s3_bucket",
+      "logical_id": "AssetsBucket",
+      "config": {
+        "versioned": true,
+        "block_public_access": true
+      }
+    }
+  ]
+}

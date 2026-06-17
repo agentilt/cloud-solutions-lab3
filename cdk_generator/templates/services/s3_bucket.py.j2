@@ -1,0 +1,4 @@
+{# Service block: S3 bucket. Rendered into a Stack body. CANONICAL template #1. #}
+{# Vars: logical_id, config (versioned, block_public_access, ...) #}
+{# Security defaults (WS5 alignment): BlockPublicAccess.BLOCK_ALL, encryption=S3_MANAGED, enforce_ssl=True. #}
+{# TODO(diego): emit `self.{{ logical_id|snake }} = s3.Bucket(self, "{{ logical_id }}", ...)` #}

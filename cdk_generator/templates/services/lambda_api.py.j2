@@ -1,0 +1,4 @@
+{# Service block: Lambda + API Gateway (HTTP API). CANONICAL template #2. #}
+{# Vars: logical_id, config (runtime, handler, routes[]) #}
+{# AWS-native: apigwv2.HttpApi -> HttpLambdaIntegration. Least-privilege role, no wildcards. #}
+{# TODO(diego): emit Function + HttpApi + routes from config.routes; CfnOutput the api endpoint. #}

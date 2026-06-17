@@ -1,0 +1,4 @@
+{# Stack file: wraps all rendered service construct blocks in one Stack class. #}
+{# Vars: stack_class, rendered_service_blocks (list of source strings), imports #}
+{# TODO(diego): emit imports, `class {{ stack_class }}(Stack):`, __init__, then #}
+{#              inject each service block (indented) + any CfnOutputs.            #}

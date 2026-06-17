@@ -1,0 +1,4 @@
+{# Service block: DynamoDB table. CANONICAL template #3. #}
+{# Vars: logical_id, config (partition_key, sort_key?, billing_mode?) #}
+{# Defaults: PAY_PER_REQUEST, encryption=AWS_MANAGED, point_in_time_recovery=True. #}
+{# TODO(diego): emit dynamodb.Table(self, "{{ logical_id }}", partition_key=..., sort_key=...). #}
