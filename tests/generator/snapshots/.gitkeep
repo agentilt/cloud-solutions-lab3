@@ -1,0 +1,2 @@
+# Committed render snapshots live here (one subdir per example spec).
+# Populated by test_snapshot.py once the renderer is implemented.
