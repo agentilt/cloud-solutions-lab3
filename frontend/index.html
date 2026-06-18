@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CloudCompass Builder</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <div class="brand">CloudCompass Builder</div>
+        <div class="subtitle">Governed AWS CDK generation</div>
+      </div>
+      <div class="auth-actions">
+        <span id="identity" class="identity">Signed out</span>
+        <button id="signInButton" type="button">Sign in</button>
+        <button id="signOutButton" type="button" class="secondary" hidden>Sign out</button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="workspace">
+        <form id="projectForm" class="prompt-panel">
+          <label for="prompt">Infrastructure prompt</label>
+          <textarea id="prompt" name="prompt" rows="8">Create the AWS infrastructure for a small online bakery. I need a static website, customer login, an order API, a database for orders, email receipts, logs, and a monthly budget under $200.</textarea>
+          <div class="form-row">
+            <label for="region">Region</label>
+            <input id="region" name="region" value="us-east-1" />
+            <button id="submitButton" type="submit">Generate</button>
+          </div>
+        </form>
+
+        <section class="status-panel">
+          <div class="status-header">
+            <span>Status</span>
+            <strong id="statusValue">READY</strong>
+          </div>
+          <div class="timeline" aria-label="Workflow states">
+            <span data-state="RECEIVED">Received</span>
+            <span data-state="DESIGNING">Designing</span>
+            <span data-state="GENERATING_CDK">CDK</span>
+            <span data-state="VALIDATING">Validation</span>
+            <span data-state="CHANGE_SET_READY">Change set</span>
+          </div>
+          <div id="message" class="message"></div>
+        </section>
+      </section>
+
+      <section class="results-grid">
+        <article>
+          <h2>Architecture</h2>
+          <p id="architectureSummary">No project generated yet.</p>
+        </article>
+        <article>
+          <h2>Artifact</h2>
+          <a id="artifactLink" href="#" target="_blank" rel="noreferrer">Unavailable</a>
+        </article>
+        <article>
+          <h2>Validation</h2>
+          <pre id="validationOutput">{}</pre>
+        </article>
+        <article>
+          <h2>Cost</h2>
+          <pre id="costOutput">{}</pre>
+        </article>
+        <article class="wide">
+          <h2>Change Set</h2>
+          <pre id="changeSetOutput">{}</pre>
+        </article>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

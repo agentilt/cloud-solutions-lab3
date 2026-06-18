@@ -1,114 +1,171 @@
-# Lab 3 — Project Report
+# CloudCompass Builder - Lab 3 Report
 
-**Course:** Cloud Solutions Architectures
-**Group:** Group 2
-**Members:** Agustin Gentil, Boumediene Rayane Mazari, Diego Alfaro Gómez, Renato González Huamán, Sebastián Otegui Gómez
+**Course:** Cloud Solutions Architectures  
+**Group:** Group 2  
+**Members:** Agustin Gentil, Boumediene Rayane Mazari, Diego Alfaro Gomez, Renato Gonzalez Huaman, Sebastian Otegui Gomez  
 **Submission date:** 2026-06-28
 
----
+## 1. Use Case
 
-## 1. Use case
+CloudCompass Builder helps a small team turn a natural-language AWS
+infrastructure request into a governed, reviewable deployment package. The demo
+vertical is an online bakery/shop that needs a static website, customer login,
+an order API, order storage, email receipts, logs, and a budget target under
+$200/month. The agentic layer adds value because it decomposes the request into
+requirements, architecture selection, deterministic CDK generation, validation,
+cost estimation, and deployment preview while enforcing a no-auto-deploy
+boundary.
 
-> One paragraph: the problem the solution addresses, who it is for, and why the agentic component adds value over a non-agentic implementation.
+## 2. Architecture And Workflow
 
-## 2. Architecture diagram and workflow
+The deployed CloudCompass platform uses AWS-native services:
 
-> Embed `architecture.png` here. Walk through the execution flow step by step (request enters → service hops → response). Cover both the synchronous agent-invocation flow and any async flows (S3 uploads, EventBridge consumers, scheduled jobs, etc.).
-
-![Architecture](./architecture.png)
-
-### Service interactions
-
-| # | Source | Target | Mechanism | Purpose |
-|---|---|---|---|---|
-| 1 | Client | API Gateway | HTTPS | Entry point |
-| 2 | API Gateway | Lambda (agent_invoker) | Proxy integration | Bridge to AgentCore |
-| 3 | Lambda | Bedrock AgentCore Runtime | `InvokeAgentRuntime` | Agent invocation |
-| 4 | AgentCore | Bedrock foundation model | `InvokeModel` | LLM reasoning |
-| 5 | AgentCore | DynamoDB | `GetItem` via `lookup_record` tool | Read app data |
-| 6 | AgentCore | EventBridge | `PutEvents` via `record_event` tool | Emit domain events |
-
-## 3. Technical decisions
-
-> For each major decision: the options considered, the choice made, and why.
-
-- **API style:** HTTP API v2 over REST API v1 — lower latency and ~70% cheaper for our request volume.
-- **Lambda architecture:** ARM64 (Graviton) — ~20% cheaper at equivalent performance for our Python workload.
-- **Agent framework:** Strands Agents on Bedrock AgentCore — managed runtime, no container ops, native streaming.
-- **Foundation model:** Anthropic Claude (family selection) — chosen for tool-use reliability and instruction-following.
-- **Data layer:** DynamoDB on-demand single-table — fits evolving access patterns; we add GSIs as access patterns stabilize.
-- **Eventing:** Custom EventBridge bus — decouples the agent from downstream consumers; allows future fan-out without coupling stacks.
-- **IaC:** Python CDK with three stacks (Storage / Agent / Api) — separation by lifecycle: data outlives app code; the agent image rebuilds independently.
-
-## 4. Service configurations
-
-| Service | Configuration | Rationale |
-|---|---|---|
-| S3 data bucket | SSE-S3, BlockPublicAccess=ALL, TLS-only (`aws:SecureTransport`), versioned, EventBridge notifications | Defaults safe; required for least-privilege auditing |
-| DynamoDB | On-demand, AWS-managed KMS, PITR enabled | No capacity tuning needed during development; PITR for recovery |
-| AgentCore runtime | `PUBLIC` network mode, ARM64 container, ECR-backed | Simplest viable network posture; ARM64 image required by AgentCore |
-| Lambda | Python 3.13, ARM64, 512 MB, 30 s timeout, X-Ray active | Cost-effective and observable defaults |
-| API Gateway | HTTP API v2, CORS open (TODO tighten) | Lower cost; CORS to be tightened pre-prod |
-| IAM | No `*` actions or resources; resource-scoped to specific tables, buckets, models | Rubric requirement; least-privilege |
-| Encryption | At rest: SSE-S3 + DDB AWS-managed KMS. In transit: API Gateway HTTPS, S3 TLS-only policy, AgentCore HTTPS | Defense in depth |
-
-## 5. Cost estimation
-
-**Meaningful unit:** *cost per agent invocation* (one user prompt → one response, with up to N tool calls).
-
-### Variable costs per invocation
-
-| Component | Driver | Per-invocation cost (USD) |
-|---|---|---|
-| Bedrock model tokens | input + output tokens | _TODO_ |
-| AgentCore runtime | active CPU seconds + memory-GB-seconds | _TODO_ |
-| Lambda (agent_invoker) | invocation + GB-seconds | _TODO_ |
-| API Gateway request | $1.00 per million | _TODO_ |
-| DynamoDB reads/writes | 1 RCU per `lookup_record`, 1 WCU per `record_event` | _TODO_ |
-| EventBridge custom-bus events | $1.00 per million | _TODO_ |
-| CloudWatch logs ingestion | per GB ingested | _TODO_ |
-| **Total variable** | | **_TODO_** |
-
-### Fixed costs (monthly, regardless of traffic)
-
-| Component | Cost |
+| Layer | Services |
 |---|---|
-| AgentCore runtime baseline | _TODO_ |
-| ECR storage (agent image) | _TODO_ |
-| S3 storage (uploads + versioning) | _TODO_ |
-| DynamoDB storage | _TODO_ |
-| CloudWatch log retention | _TODO_ |
-| **Total fixed** | **_TODO_** |
+| Frontend and auth | S3 private bucket, CloudFront with Origin Access Control, Cognito Hosted UI |
+| API entry | API Gateway HTTP API with Cognito JWT authorizer |
+| Compute | Lambda project handler and AgentCore invoker |
+| Agentic runtime | Strands Agents on Amazon Bedrock AgentCore Runtime |
+| State and artifacts | DynamoDB project table and S3 artifact bucket |
+| Validation and preview | CodeBuild and CloudFormation change sets |
+| Observability | CloudWatch logs and X-Ray tracing |
 
-### Worked example
+Workflow:
 
-> "At 10,000 invocations/month: fixed = $X, variable = $Y → total = $Z (about $W per invocation)."
+1. User signs in through Cognito.
+2. Browser submits `POST /projects` with a prompt and region.
+3. API Gateway validates the JWT; Lambda derives `user_id` from the JWT `sub`.
+4. Lambda stores `RECEIVED` in DynamoDB and invokes AgentCore.
+5. The Strands orchestration app runs specialist steps for requirements,
+   architecture, CDK generation, security review, cost, and deployment preview.
+6. The deterministic generator renders a Python CDK project for the MVP service
+   catalog: S3, Lambda/API Gateway, and DynamoDB.
+7. The agent stores the generated CDK zip and manifest in S3.
+8. The agent starts a CodeBuild validation run.
+9. The agent creates a CloudFormation change set and stops at
+   `CHANGE_SET_READY`.
+10. The UI polls `GET /projects/{project_id}` and displays artifact, validation,
+    cost, and change-set details.
 
-## 6. Limitations and assumptions
+## 3. Technical Decisions
 
-### Limitations
+| Decision | Choice | Reason |
+|---|---|---|
+| Agent topology | Lead orchestrator plus specialist Strands agents | Clear decomposition and rubric alignment |
+| Runtime | Bedrock AgentCore Runtime | Managed agent hosting and required by the lab |
+| Generator | Deterministic Jinja2 renderer | Repeatable output, unit tests, no LLM-generated syntax drift |
+| API | HTTP API v2 | Lower cost and sufficient JWT support |
+| Auth | Cognito Hosted UI and JWT authorizer | AWS-native identity without custom auth code |
+| Frontend hosting | Private S3 behind CloudFront OAC | No public origin bucket and CDN delivery |
+| Validation | CodeBuild | Isolated synth/compile checks for generated artifacts |
+| Deployment boundary | CloudFormation change set only | Human review before any real deployment |
+| RAG/guidance | S3 guidance corpus with S3 Vectors hook | Keeps MVP deployable while preserving the chosen extension point |
 
-- Single-region deployment. No DR/failover.
-- AgentCore network mode is `PUBLIC` — cannot reach private VPC resources without re-deployment.
-- API has no auth (open `/invoke`). Add Cognito / API key / Lambda authorizer before any real traffic.
-- CORS is wide-open (`*`) for local development. Tighten before any external use.
-- No prompt-injection guardrails configured at the Bedrock Guardrails layer.
-- No semantic caching — every prompt hits the model.
+## 4. Service Configuration
 
-### Assumptions
+| Service | Configuration |
+|---|---|
+| S3 artifact bucket | SSE-S3, Block Public Access, TLS-only, versioned, EventBridge enabled |
+| DynamoDB | `pk`/`sk`, on-demand billing, AWS-managed encryption, PITR, TTL |
+| CloudFront | Private S3 origin through OAC, HTTPS redirect, SPA error responses |
+| Cognito | Email sign-in, hosted domain, authorization-code flow with PKCE |
+| API Gateway | Cognito JWT authorizer on `/projects`, `/invoke`, and `/upload-url` |
+| Lambda | Python 3.13, ARM64, X-Ray active, one-month log retention |
+| AgentCore | ARM64 container image, scoped model invocation, S3/DynamoDB/CodeBuild/CloudFormation tool permissions |
+| CodeBuild | No-source project, artifact URI supplied at runtime, Python compile plus `cdk synth` |
+| CloudFormation | Change-set creation only from the agent role; execution is out of MVP scope |
 
-- Group AWS account has Bedrock model access enabled for the chosen Claude model in the deployment region.
-- AgentCore is available in the deployment region.
-- Container build host supports `docker buildx` for ARM64 cross-compilation.
-- Traffic volume during evaluation is modest (≤ low thousands of invocations / month).
-- All data is non-PII / non-sensitive — no additional compliance (HIPAA/PCI/GDPR-restricted) controls in scope.
+## 5. Agentic Implementation
 
-## 7. Appendix: CDK code overview
+The AgentCore container defines a Strands orchestrator and six specialist
+agents: Requirements Analyst, Architecture Designer, CDK Generator, Security
+Reviewer, Cost Estimator, and Deployment Orchestrator. The MVP workflow is
+deterministic for demo reliability, but all major actions are exposed through
+Strands `@tool` functions:
 
-Stacks deployed by `cdk deploy --all`:
+- `query_reference_guidance()` reads approved guidance from S3 with a curated fallback.
+- `render_cdk_project()` calls the deterministic generator.
+- `write_cdk_project()` writes the generated archive to S3.
+- `save_project_state()` persists workflow state in DynamoDB.
+- `start_validation_build()` starts CodeBuild.
+- `validate_generated_template()` performs lightweight security checks.
+- `get_service_pricing()` returns cost per infrastructure-generation run.
+- `create_cloudformation_change_set()` creates a preview and never executes it.
 
-1. **`Lab3-Storage`** — S3 data bucket, DynamoDB single-table, EventBridge custom bus.
-2. **`Lab3-Agent`** — ECR image (ARM64 Strands agent), least-privilege execution role, AgentCore runtime created via custom resource.
-3. **`Lab3-Api`** — HTTP API + 2 Lambdas (`upload_url`, `agent_invoker`).
+## 6. Security
 
-Full source in the accompanying zip.
+Security controls:
+
+- User identity comes from Cognito JWT claims, not from request body fields.
+- Project records use `PK = USER#{user_id}` and `SK = PROJECT#{project_id}`.
+- Frontend and artifact buckets block public access and enforce TLS.
+- API routes require a Cognito JWT authorizer.
+- Lambda, AgentCore, CodeBuild, and CloudFormation use separate roles.
+- The agent role can create/describe change sets but cannot execute them.
+- Generated CDK defaults include private S3, encryption, DynamoDB PITR, and X-Ray on Lambda.
+- Logs are retained for one month for lab-cost control.
+
+Limitations:
+
+- The generated CDK catalog is intentionally narrow for the MVP.
+- S3 Vectors and AgentCore Gateway are represented as pluggable hooks with a fallback corpus.
+- CodeBuild validation is asynchronous; the UI displays the started build metadata.
+- The change-set preview template is conservative for the MVP; the full CDK zip is the source artifact for review.
+
+## 7. Cost Estimate
+
+**Meaningful unit:** one infrastructure-generation run.
+
+A run means:
+
+```text
+Prompt -> requirements -> architecture -> CDK generation -> validation -> change set
+```
+
+Estimated variable cost per run: **$0.35 to $1.25**.
+
+| Component | Cost driver | Estimated per-run cost |
+|---|---|---|
+| Bedrock model inference | Prompt and generated output tokens | $0.15-$0.65 |
+| AgentCore runtime and gateway calls | Runtime duration and tool calls | $0.05-$0.20 |
+| CodeBuild validation | 2-5 small build minutes | $0.05-$0.25 |
+| S3, DynamoDB, Lambda, API Gateway, logs | Requests and small stored artifacts | $0.10-$0.15 |
+
+Fixed or low-baseline monthly costs:
+
+| Component | Notes |
+|---|---|
+| S3 artifacts and frontend files | Low unless many generated archives are retained |
+| CloudWatch logs | Controlled with one-month retention |
+| DynamoDB storage | Small project metadata records |
+| ECR image storage | Agent container image |
+| CloudFront/Cognito | Mostly request-driven for this demo scale |
+
+The generated bakery infrastructure runtime cost is separate from the
+CloudCompass generation cost. CloudFormation itself is not the meaningful cost
+driver; the resources created by a reviewed stack are.
+
+## 8. Scalability And Production Readiness
+
+The MVP uses managed services with natural scale-out boundaries: CloudFront for
+the UI, API Gateway and Lambda for entry traffic, AgentCore for agent runtime,
+DynamoDB on-demand for project state, S3 for artifacts, and CodeBuild for
+isolated validation. Production hardening would add a job queue or Step
+Functions for long-running validation, stricter CORS origins, Bedrock Guardrails,
+full S3 Vectors provisioning, richer generated service templates, and explicit
+human approval workflow for change-set execution.
+
+## 9. CDK Code Reference
+
+Main platform stacks:
+
+1. `CloudCompass-Storage`: artifact bucket, project table, EventBridge bus.
+2. `CloudCompass-FrontendHosting`: private S3 frontend bucket and CloudFront OAC.
+3. `CloudCompass-Auth`: Cognito user pool, app client, hosted domain.
+4. `CloudCompass-Validation`: CodeBuild project and CloudFormation execution role.
+5. `CloudCompass-Agent`: AgentCore container image, execution role, runtime custom resource.
+6. `CloudCompass-Api`: authenticated HTTP API and Lambda routes.
+7. `CloudCompass-FrontendDeployment`: static UI and generated config.
+
+The generated user-facing CDK package lives under `cdk_generator/` and is
+separate from `cdk_app/`, which deploys CloudCompass itself.

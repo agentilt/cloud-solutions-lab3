@@ -1,27 +1,43 @@
-"""Validity check: the GENERATED skeleton must be syntactically valid Python
-and should `cdk synth` on a sample spec.
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
-Two tiers (cheap -> expensive):
-  1. compile() every rendered .py file (fast, no AWS, always run in CI).
-  2. write the project to a temp dir and run `cdk synth` (slower; requires the
-     CDK CLI + node — gate behind a marker / env so unit runs stay fast).
-
-Success for the user-facing skeleton = syntactically valid + structurally sane.
-It does NOT need to deploy in our account (see diego-part.md).
-
-TODO(diego): implement once render_project() exists.
-"""
 import pytest
 
-pytestmark = pytest.mark.skip(reason="TODO(diego): scaffold only — implement after renderer")
+from cdk_generator import generate_cdk_project
+
+EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "cdk_generator" / "schema" / "examples"
+
+
+def _load_example(name: str) -> dict:
+    return json.loads((EXAMPLES_DIR / name).read_text(encoding="utf-8"))
 
 
 def test_rendered_files_are_valid_python():
-    """compile() each generated .py file — no SyntaxError."""
-    raise NotImplementedError
+    result = generate_cdk_project(_load_example("bakery.json"))
+
+    for path, source in result["files"].items():
+        if path.endswith(".py"):
+            compile(source, path, "exec")
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(
+    os.environ.get("RUN_SLOW_CDK_TESTS") != "1",
+    reason="set RUN_SLOW_CDK_TESTS=1 to run generated project cdk synth",
+)
 def test_sample_project_cdk_synths(tmp_path):
-    """Write a rendered project to tmp_path and assert `cdk synth` exits 0."""
-    raise NotImplementedError
+    result = generate_cdk_project(_load_example("bakery.json"))
+    for relative_path, source in result["files"].items():
+        destination = tmp_path / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(source, encoding="utf-8")
+
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(["cdk", "synth"], cwd=tmp_path, check=True)

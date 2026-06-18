@@ -16,7 +16,7 @@
       "type": "string",
       "description": "High-level architecture pattern the services compose into.",
       "enum": ["serverless-web-application"],
-      "$comment": "TODO(diego+WS1): extend enum as we add supported patterns."
+      "$comment": "Extend this enum when the architecture designer supports more patterns."
     },
     "deployment_boundary": {
       "type": "string",
@@ -45,7 +45,7 @@
           "type": "string",
           "description": "Canonical service key understood by the generator.",
           "enum": ["s3_bucket", "lambda_api", "dynamodb_table"],
-          "$comment": "TODO(diego): keep in sync with registry.supported_types()."
+          "$comment": "Keep in sync with registry.supported_types()."
         },
         "logical_id": {
           "type": "string",
@@ -55,7 +55,7 @@
         "config": {
           "type": "object",
           "description": "Template-specific parameters. Validated per-type in a later schema revision.",
-          "$comment": "TODO(diego): split into per-type sub-schemas (oneOf on `type`)."
+          "$comment": "Future versions can split this into per-type sub-schemas."
         }
       }
     }

@@ -23,6 +23,5 @@
       "logical_id": "OrdersTable",
       "config": { "partition_key": "pk", "sort_key": "sk" }
     }
-  ],
-  "$comment": "Mirrors the demo vertical in the project brief; the bakery's CloudFront/Cognito/SES services are TODO once those templates exist."
+  ]
 }

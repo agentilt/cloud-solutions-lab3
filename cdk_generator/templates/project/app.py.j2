@@ -1,3 +1,11 @@
-{# CDK app entry point for the GENERATED user-facing project. #}
-{# Rendered once per project. Vars: project_name, stack_class, services #}
-{# TODO(diego): emit `#!/usr/bin/env python3`, imports, App(), Stack instantiation, app.synth() #}
+#!/usr/bin/env python3
+import aws_cdk as cdk
+
+from cloudcompass_generated.generated_stack import {{ stack_class }}
+
+
+app = cdk.App()
+
+{{ stack_class }}(app, "{{ stack_class }}")
+
+app.synth()

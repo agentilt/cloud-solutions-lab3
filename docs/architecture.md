@@ -1,69 +1,70 @@
-# Architecture
+# CloudCompass Builder Architecture
 
-> Replace this overview with one tied to the chosen use case. Keep the building blocks identified below — they are what the scaffold deploys.
+CloudCompass Builder is a governed multi-agent AWS infrastructure generator. A
+user submits a natural-language request, and the system produces a validated
+Python CDK project, stores the artifact, estimates the generation cost, and
+creates a CloudFormation change-set preview. The MVP never executes the change
+set automatically.
 
 ## Components
 
 | Layer | Service | Purpose |
 |---|---|---|
-| Entry | Amazon API Gateway (HTTP API) | Public REST entry: `POST /upload-url`, `POST /invoke` |
-| Compute (entry) | AWS Lambda (Python 3.13, ARM64) | `upload_url` mints presigned S3 URLs; `agent_invoker` calls AgentCore |
-| Agent | Amazon Bedrock AgentCore Runtime | Hosts the Strands Agent container (ARM64), `InvokeAgentRuntime` API |
-| Agent logic | Strands Agents | Orchestrates LLM + `@tool` calls; system prompt in `agent/agent.py` |
-| Foundation model | Amazon Bedrock (Anthropic Claude family) | Reasoning engine behind the agent |
-| Data | Amazon DynamoDB (on-demand) | Single-table `pk`/`sk` store for app records |
-| Object store | Amazon S3 (SSE-S3, versioned, TLS-only) | Uploads / artifacts; EventBridge notifications enabled |
-| Events | Amazon EventBridge custom bus | Domain events emitted by the agent for async downstream work |
-| Observability | CloudWatch Logs + X-Ray | Lambda + AgentCore runtime traces |
+| Frontend | S3 private bucket + CloudFront OAC | Static authenticated UI |
+| Auth | Amazon Cognito | Hosted UI sign-in and JWTs |
+| API | API Gateway HTTP API | Authenticated `/projects` routes |
+| Entry compute | AWS Lambda | Validates requests, derives user identity, invokes AgentCore |
+| Agent runtime | Amazon Bedrock AgentCore Runtime | Hosts the Strands multi-agent app |
+| Agent tools | Strands `@tool` functions | S3 artifacts, DynamoDB state, pricing, validation, change set |
+| Generation | `cdk_generator` package | Deterministic Python CDK renderer |
+| Data | DynamoDB | Project status and metadata, keyed by user/project |
+| Artifacts | S3 | Generated CDK zip, manifest, preview template |
+| Validation | CodeBuild | Installs dependencies, compiles generated Python, runs `cdk synth` |
+| Preview | CloudFormation | Creates a change set for human review only |
+| Observability | CloudWatch + X-Ray | Lambda, CodeBuild, and AgentCore visibility |
 
-## Execution flow (default scaffold)
+## Workflow
 
-```
-Client
-  │
-  │ 1. POST /invoke { "prompt": "..." }
-  ▼
-API Gateway (HTTP API)
-  │
-  ▼
-agent_invoker Lambda
-  │  bedrock-agentcore:InvokeAgentRuntime
-  ▼
-Bedrock AgentCore Runtime  ── invokes ──▶  Bedrock Foundation Model
-  │  (Strands Agent inside)
-  │
-  ├──▶ @tool lookup_record   ──▶ DynamoDB GetItem
-  └──▶ @tool record_event    ──▶ EventBridge PutEvents ──▶ (downstream consumers)
-  │
-  ▼
-Response streamed back to Lambda → API Gateway → Client
-```
-
-A parallel ingestion flow is also wired:
-
-```
-Client → POST /upload-url → Lambda → presigned S3 URL → Client uploads to S3
-S3 ObjectCreated → EventBridge (S3 source) → (team-defined consumer)
-```
-
-## Diagram
-
-Export the architecture diagram to `docs/architecture.png` and reference it here. Recommended tools: AWS Application Composer, draw.io with the AWS 2024 icon set, or Lucidchart.
-
-```markdown
-![Architecture](./architecture.png)
+```mermaid
+flowchart TD
+  U[User] --> CF[CloudFront static UI]
+  CF --> COG[Cognito Hosted UI]
+  CF --> API[API Gateway HTTP API]
+  API --> L[Project Lambda]
+  L --> DDB[(DynamoDB project table)]
+  L --> AC[Bedrock AgentCore Runtime]
+  AC --> O[Strands Orchestrator Agent]
+  O --> RA[Requirements Analyst]
+  O --> AD[Architecture Designer]
+  O --> CG[CDK Generator Agent]
+  O --> SR[Security Reviewer]
+  O --> CE[Cost Estimator]
+  O --> DO[Deployment Orchestrator]
+  AD --> S3G[(S3 guidance corpus / S3 Vectors hook)]
+  CG --> GEN[Deterministic cdk_generator]
+  DO --> S3[(S3 artifact bucket)]
+  DO --> CB[CodeBuild validation]
+  DO --> CFN[CloudFormation change set]
+  O --> DDB
+  L --> CF
 ```
 
-## Why these choices
+## API Flow
 
-- **HTTP API (v2) over REST API (v1)** — lower cost, lower latency, sufficient features for the use case.
-- **Lambda ARM64** — ~20% cheaper than x86 at equal performance for Python workloads.
-- **AgentCore over self-hosting Strands** — managed runtime, autoscaling, no container ops; aligns with the lab's "use managed AWS services" requirement.
-- **DynamoDB single-table on-demand** — fits unknown access patterns during development; switch to provisioned + GSIs once patterns stabilize.
-- **EventBridge custom bus** — decouples the agent from downstream consumers; allows fan-out without coupling stacks.
+1. The browser signs in with Cognito and stores the returned ID token.
+2. The browser calls `POST /projects` with `{ "prompt": "...", "region": "us-east-1" }`.
+3. API Gateway validates the Cognito JWT and invokes the project Lambda.
+4. The Lambda derives `user_id` from the JWT `sub`, creates the project record, and invokes AgentCore.
+5. The Strands app moves through `DESIGNING`, `GENERATING_CDK`, `VALIDATING`, and `CHANGE_SET_READY`.
+6. Generated CDK files are zipped and written to S3.
+7. CodeBuild validation is started with the artifact S3 URI.
+8. A CloudFormation change set is created for preview only.
+9. The UI reads `GET /projects/{project_id}` and displays the summary, artifact link, validation result, cost estimate, and change-set ARN.
 
-## Boundaries
+## MVP Boundaries
 
-- **Region**: single-region deployment (default `us-east-1`); multi-region is out of scope.
-- **Account**: single account. CDK is account-agnostic — re-deploy in a different account by changing `CDK_DEFAULT_ACCOUNT`.
-- **Network**: AgentCore runtime uses `PUBLIC` network mode (no VPC). Switch to `VPC` mode if private VPC resources need to be reached.
+- Final state is `CHANGE_SET_READY`.
+- The agent role can create and describe change sets, but it cannot execute them.
+- The deterministic generator supports the canonical MVP templates: S3, Lambda/API Gateway, and DynamoDB.
+- CloudFront, Cognito, SES, and full bakery runtime services are documented in the architecture and represented in the CloudCompass platform; expanding the generated CDK catalog is future work.
+- S3 Vectors and AgentCore Gateway are integrated as pluggable hooks where AWS APIs are available; the MVP includes a curated fallback guidance corpus so the demo remains deployable.

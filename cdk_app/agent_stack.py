@@ -20,6 +20,7 @@ from pathlib import Path
 
 from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack
 from aws_cdk import aws_dynamodb as dynamodb
+from aws_cdk import aws_codebuild as codebuild
 from aws_cdk import aws_ecr_assets as ecr_assets
 from aws_cdk import aws_events as events
 from aws_cdk import aws_iam as iam
@@ -40,6 +41,8 @@ class AgentStack(Stack):
         data_table: dynamodb.ITableV2,
         event_bus: events.IEventBus,
         data_bucket: s3.IBucket,
+        validation_project: codebuild.IProject,
+        cloudformation_execution_role: iam.IRole,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -47,7 +50,8 @@ class AgentStack(Stack):
         image = ecr_assets.DockerImageAsset(
             self,
             "AgentImage",
-            directory=str(AGENT_DIR),
+            directory=str(AGENT_DIR.parent),
+            file="agent/Dockerfile",
             platform=ecr_assets.Platform.LINUX_ARM64,
         )
 
@@ -76,8 +80,33 @@ class AgentStack(Stack):
 
         # App data access (tight)
         data_table.grant_read_write_data(execution_role)
-        data_bucket.grant_read(execution_role)
+        data_bucket.grant_read_write(execution_role)
         event_bus.grant_put_events_to(execution_role)
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["codebuild:StartBuild", "codebuild:BatchGetBuilds"],
+                resources=[validation_project.project_arn],
+            )
+        )
+        cloudformation_execution_role.grant_pass_role(execution_role)
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "cloudformation:CreateChangeSet",
+                    "cloudformation:DeleteChangeSet",
+                    "cloudformation:DescribeChangeSet",
+                    "cloudformation:DescribeStacks",
+                    "cloudformation:ValidateTemplate",
+                ],
+                resources=[
+                    f"arn:aws:cloudformation:{self.region}:{self.account}:stack/CloudCompassGenerated-*/*",
+                    f"arn:aws:cloudformation:{self.region}:{self.account}:changeSet/CloudCompassGenerated-*/*",
+                ],
+            )
+        )
+        execution_role.add_to_policy(
+            iam.PolicyStatement(actions=["pricing:GetProducts"], resources=["*"])
+        )
 
         # CloudWatch logs for the runtime
         log_group = logs.LogGroup(
@@ -110,6 +139,8 @@ class AgentStack(Stack):
                         "DATA_TABLE_NAME": data_table.table_name,
                         "EVENT_BUS_NAME": event_bus.event_bus_name,
                         "DATA_BUCKET_NAME": data_bucket.bucket_name,
+                        "VALIDATION_PROJECT_NAME": validation_project.project_name,
+                        "CFN_EXECUTION_ROLE_ARN": cloudformation_execution_role.role_arn,
                     },
                 },
                 physical_resource_id=cr.PhysicalResourceId.from_response("agentRuntimeId"),

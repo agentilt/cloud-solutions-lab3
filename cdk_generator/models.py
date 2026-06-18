@@ -1,16 +1,4 @@
-"""Parsed, validated representation of an architecture spec.
-
-These dataclasses are the in-memory form the generator works with after the raw
-JSON spec has been validated against architecture_spec.schema.json. Keeping a
-typed model (instead of passing raw dicts into templates) makes the templates
-dumb and the rendering predictable.
-
-SCOPE NOTE: the *shape* of the incoming spec is a shared contract with WS1
-(Architecture Designer Agent). Any change to these fields must be mirrored in
-the JSON schema and signed off by WS1.
-
-TODO(diego): finalize fields once the schema is locked with WS1.
-"""
+"""Parsed, validated representation of an architecture spec."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -20,10 +8,9 @@ from dataclasses import dataclass, field
 class ServiceSpec:
     """A single AWS service the generated project should provision."""
 
-    type: str          # canonical service key, e.g. "s3_bucket", "lambda_api", "dynamodb_table"
-    logical_id: str    # CDK construct id, unique within the project
-    config: dict = field(default_factory=dict)  # template-specific parameters
-    # TODO(diego): add `depends_on` / relationship modeling once WS1 defines it.
+    type: str
+    logical_id: str
+    config: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -31,16 +18,26 @@ class ArchitectureSpec:
     """The full, validated input to the generator."""
 
     project_name: str
-    pattern: str                       # e.g. "serverless-web-application"
+    pattern: str
     services: list[ServiceSpec] = field(default_factory=list)
     deployment_boundary: str = "change-set-only"
-    # TODO(diego): budget, region hints, tags, outputs — add as schema firms up.
+    budget_monthly_usd: float | None = None
 
     @classmethod
     def from_dict(cls, raw: dict) -> "ArchitectureSpec":
-        """Build a spec from an already-schema-validated dict.
-
-        NOTE: this does not validate — call validate_spec() (see generator.py)
-        first. Kept as a stub until the schema is locked.
-        """
-        raise NotImplementedError("TODO(diego): map validated dict -> dataclasses")
+        """Build a spec from an already-schema-validated dict."""
+        services = [
+            ServiceSpec(
+                type=service["type"],
+                logical_id=service["logical_id"],
+                config=dict(service.get("config") or {}),
+            )
+            for service in raw["services"]
+        ]
+        return cls(
+            project_name=raw["project_name"],
+            pattern=raw["pattern"],
+            services=services,
+            deployment_boundary=raw.get("deployment_boundary", "change-set-only"),
+            budget_monthly_usd=raw.get("budget_monthly_usd"),
+        )

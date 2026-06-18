@@ -4,9 +4,7 @@ This is the single source of truth for "which service patterns can the
 generator emit". The Architecture Designer (WS1) should only emit `type` values
 that exist here; anything else is rejected at validation time.
 
-Start with 3-4 canonical templates (S3, Lambda+API Gateway, DynamoDB) and grow.
-
-TODO(diego): wire each entry to a real template file under templates/.
+The MVP catalog intentionally starts with S3, Lambda/API Gateway, and DynamoDB.
 """
 from __future__ import annotations
 
@@ -15,7 +13,7 @@ TEMPLATE_REGISTRY: dict[str, str] = {
     "s3_bucket": "services/s3_bucket.py.j2",
     "lambda_api": "services/lambda_api.py.j2",
     "dynamodb_table": "services/dynamodb_table.py.j2",
-    # TODO(diego): "vpc_basics", "cloudfront_site", "cognito_user_pool", ...
+    # Future catalog additions: cloudfront_site, cognito_user_pool, ses_email.
 }
 
 # Project-level scaffolding templates (always rendered, regardless of services).

@@ -33,6 +33,7 @@ class StorageStack(Stack):
             sort_key=dynamodb.Attribute(name="sk", type=dynamodb.AttributeType.STRING),
             billing=dynamodb.Billing.on_demand(),
             encryption=dynamodb.TableEncryptionV2.aws_managed_key(),
+            time_to_live_attribute="ttl",
             point_in_time_recovery_specification=dynamodb.PointInTimeRecoverySpecification(
                 point_in_time_recovery_enabled=True,
             ),

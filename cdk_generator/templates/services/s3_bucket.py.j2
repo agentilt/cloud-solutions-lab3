@@ -1,4 +1,10 @@
-{# Service block: S3 bucket. Rendered into a Stack body. CANONICAL template #1. #}
-{# Vars: logical_id, config (versioned, block_public_access, ...) #}
-{# Security defaults (WS5 alignment): BlockPublicAccess.BLOCK_ALL, encryption=S3_MANAGED, enforce_ssl=True. #}
-{# TODO(diego): emit `self.{{ logical_id|snake }} = s3.Bucket(self, "{{ logical_id }}", ...)` #}
+self.{{ logical_id | snake }} = s3.Bucket(
+    self,
+    "{{ logical_id }}",
+    encryption=s3.BucketEncryption.S3_MANAGED,
+    block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+    enforce_ssl=True,
+    versioned={{ config.get("versioned", True) | bool_literal }},
+    removal_policy=RemovalPolicy.RETAIN,
+)
+CfnOutput(self, "{{ logical_id }}Name", value=self.{{ logical_id | snake }}.bucket_name)

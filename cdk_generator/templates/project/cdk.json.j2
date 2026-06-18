@@ -1,2 +1,9 @@
-{# cdk.json for the generated project. Account-agnostic, no env baked in. #}
-{# TODO(diego): emit { "app": "python3 app.py", "context": { ...feature flags... } } #}
+{
+  "app": "python app.py",
+  "context": {
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/aws-iam:minimizePolicies": true,
+    "@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy": true,
+    "@aws-cdk/aws-lambda:useCdkManagedLogGroup": true
+  }
+}

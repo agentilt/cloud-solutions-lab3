@@ -1,21 +1,22 @@
-"""Contract tests: every example spec must satisfy architecture_spec.schema.json,
-and the schema's allowed service types must match registry.supported_types().
+import json
+from pathlib import Path
 
-This is the WS1<->WS2 guardrail — if WS1 emits a spec shape we don't accept, or
-the schema and the template registry drift apart, these tests fail loudly.
+import jsonschema
 
-TODO(diego): implement once the schema is locked. Skipped for now.
-"""
-import pytest
+from cdk_generator import registry
+from cdk_generator.generator import load_schema
 
-pytestmark = pytest.mark.skip(reason="TODO(diego): scaffold only — implement after schema lock")
+EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "cdk_generator" / "schema" / "examples"
 
 
 def test_examples_validate_against_schema():
-    """Each file in schema/examples/ validates against the schema."""
-    raise NotImplementedError
+    schema = load_schema()
+    for example_path in sorted(EXAMPLES_DIR.glob("*.json")):
+        raw = json.loads(example_path.read_text(encoding="utf-8"))
+        jsonschema.validate(raw, schema)
 
 
 def test_schema_enum_matches_registry():
-    """schema service `type` enum == registry.supported_types() (no drift)."""
-    raise NotImplementedError
+    schema = load_schema()
+    service_enum = schema["$defs"]["service"]["properties"]["type"]["enum"]
+    assert sorted(service_enum) == registry.supported_types()
