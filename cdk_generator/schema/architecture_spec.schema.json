@@ -44,7 +44,14 @@
         "type": {
           "type": "string",
           "description": "Canonical service key understood by the generator.",
-          "enum": ["s3_bucket", "lambda_api", "dynamodb_table"],
+          "enum": [
+            "s3_bucket",
+            "lambda_api",
+            "dynamodb_table",
+            "cloudfront_site",
+            "cognito_user_pool",
+            "ses_email"
+          ],
           "$comment": "Keep in sync with registry.supported_types()."
         },
         "logical_id": {

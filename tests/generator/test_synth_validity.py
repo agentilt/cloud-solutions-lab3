@@ -15,8 +15,9 @@ def _load_example(name: str) -> dict:
     return json.loads((EXAMPLES_DIR / name).read_text(encoding="utf-8"))
 
 
-def test_rendered_files_are_valid_python():
-    result = generate_cdk_project(_load_example("bakery.json"))
+@pytest.mark.parametrize("example", ["bakery.json", "full_web_app.json"])
+def test_rendered_files_are_valid_python(example):
+    result = generate_cdk_project(_load_example(example))
 
     for path, source in result["files"].items():
         if path.endswith(".py"):
@@ -28,8 +29,9 @@ def test_rendered_files_are_valid_python():
     os.environ.get("RUN_SLOW_CDK_TESTS") != "1",
     reason="set RUN_SLOW_CDK_TESTS=1 to run generated project cdk synth",
 )
-def test_sample_project_cdk_synths(tmp_path):
-    result = generate_cdk_project(_load_example("bakery.json"))
+@pytest.mark.parametrize("example", ["bakery.json", "full_web_app.json"])
+def test_sample_project_cdk_synths(tmp_path, example):
+    result = generate_cdk_project(_load_example(example))
     for relative_path, source in result["files"].items():
         destination = tmp_path / relative_path
         destination.parent.mkdir(parents=True, exist_ok=True)

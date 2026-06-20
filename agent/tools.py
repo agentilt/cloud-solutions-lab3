@@ -302,33 +302,49 @@ def validate_generated_template(files: dict[str, str]) -> dict:
 
 
 def _preview_template_from_spec(architecture_spec: dict) -> dict:
+    """Build a conservative CloudFormation preview for the change set.
+
+    This is a hand-written representation of every service in the spec — enough
+    for a faithful change-set preview — NOT the authoritative artifact. The full
+    wiring (IAM, routes, OAC, etc.) lives in the generated CDK zip, which is what
+    CodeBuild synthesizes. We model every service type so nothing is silently
+    dropped from the preview (the previous version omitted lambda_api).
+    """
     resources: dict[str, dict] = {}
     outputs: dict[str, dict] = {}
+
+    def _private_bucket() -> dict:
+        return {
+            "Type": "AWS::S3::Bucket",
+            "Properties": {
+                "BucketEncryption": {
+                    "ServerSideEncryptionConfiguration": [
+                        {"ServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}
+                    ]
+                },
+                "PublicAccessBlockConfiguration": {
+                    "BlockPublicAcls": True,
+                    "BlockPublicPolicy": True,
+                    "IgnorePublicAcls": True,
+                    "RestrictPublicBuckets": True,
+                },
+            },
+        }
+
     for service in architecture_spec.get("services", []):
         logical_id = service["logical_id"]
         config = service.get("config") or {}
-        if service["type"] == "s3_bucket":
-            resources[logical_id] = {
-                "Type": "AWS::S3::Bucket",
-                "Properties": {
-                    "BucketEncryption": {
-                        "ServerSideEncryptionConfiguration": [
-                            {"ServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}
-                        ]
-                    },
-                    "PublicAccessBlockConfiguration": {
-                        "BlockPublicAcls": True,
-                        "BlockPublicPolicy": True,
-                        "IgnorePublicAcls": True,
-                        "RestrictPublicBuckets": True,
-                    },
-                    "VersioningConfiguration": {
-                        "Status": "Enabled" if config.get("versioned", True) else "Suspended"
-                    },
-                },
+        service_type = service["type"]
+
+        if service_type == "s3_bucket":
+            bucket = _private_bucket()
+            bucket["Properties"]["VersioningConfiguration"] = {
+                "Status": "Enabled" if config.get("versioned", True) else "Suspended"
             }
+            resources[logical_id] = bucket
             outputs[f"{logical_id}Name"] = {"Value": {"Ref": logical_id}}
-        elif service["type"] == "dynamodb_table":
+
+        elif service_type == "dynamodb_table":
             key_schema = [{"AttributeName": config.get("partition_key", "pk"), "KeyType": "HASH"}]
             attribute_definitions = [
                 {"AttributeName": config.get("partition_key", "pk"), "AttributeType": "S"}
@@ -350,14 +366,107 @@ def _preview_template_from_spec(architecture_spec: dict) -> dict:
             }
             outputs[f"{logical_id}Name"] = {"Value": {"Ref": logical_id}}
 
+        elif service_type == "lambda_api":
+            role_id = f"{logical_id}Role"
+            resources[role_id] = {
+                "Type": "AWS::IAM::Role",
+                "Properties": {
+                    "AssumeRolePolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Principal": {"Service": "lambda.amazonaws.com"},
+                                "Action": "sts:AssumeRole",
+                            }
+                        ],
+                    },
+                    "ManagedPolicyArns": [
+                        {
+                            "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/"
+                            "service-role/AWSLambdaBasicExecutionRole"
+                        }
+                    ],
+                },
+            }
+            resources[logical_id] = {
+                "Type": "AWS::Lambda::Function",
+                "Properties": {
+                    "Runtime": config.get("runtime", "python3.12"),
+                    "Handler": "index.handler",
+                    "Architectures": ["arm64"],
+                    "Role": {"Fn::GetAtt": [role_id, "Arn"]},
+                    "Code": {
+                        "ZipFile": "import json\n\n\ndef handler(event, context):\n"
+                        "    return {'statusCode': 200}\n"
+                    },
+                },
+            }
+            outputs[f"{logical_id}Arn"] = {"Value": {"Fn::GetAtt": [logical_id, "Arn"]}}
+
+        elif service_type == "cognito_user_pool":
+            resources[logical_id] = {
+                "Type": "AWS::Cognito::UserPool",
+                "Properties": {
+                    "UserPoolName": logical_id,
+                    "AutoVerifiedAttributes": ["email"],
+                    "UsernameAttributes": ["email"],
+                },
+            }
+            resources[f"{logical_id}Client"] = {
+                "Type": "AWS::Cognito::UserPoolClient",
+                "Properties": {"UserPoolId": {"Ref": logical_id}},
+            }
+            outputs[f"{logical_id}Id"] = {"Value": {"Ref": logical_id}}
+
+        elif service_type == "ses_email":
+            resources[logical_id] = {
+                "Type": "AWS::SES::ConfigurationSet",
+                "Properties": {"Name": _sanitize_stack_part(logical_id)},
+            }
+            if config.get("sender_email"):
+                resources[f"{logical_id}Identity"] = {
+                    "Type": "AWS::SES::EmailIdentity",
+                    "Properties": {"EmailIdentity": config["sender_email"]},
+                }
+            outputs[f"{logical_id}Name"] = {"Value": {"Ref": logical_id}}
+
+        elif service_type == "cloudfront_site":
+            origin_id = f"{logical_id}OriginBucket"
+            resources[origin_id] = _private_bucket()
+            resources[logical_id] = {
+                "Type": "AWS::CloudFront::Distribution",
+                "Properties": {
+                    "DistributionConfig": {
+                        "Enabled": True,
+                        "DefaultRootObject": "index.html",
+                        "Origins": [
+                            {
+                                "Id": "s3origin",
+                                "DomainName": {
+                                    "Fn::GetAtt": [origin_id, "RegionalDomainName"]
+                                },
+                                "S3OriginConfig": {"OriginAccessIdentity": ""},
+                            }
+                        ],
+                        "DefaultCacheBehavior": {
+                            "TargetOriginId": "s3origin",
+                            "ViewerProtocolPolicy": "redirect-to-https",
+                            # AWS managed "CachingOptimized" policy.
+                            "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+                        },
+                    }
+                },
+            }
+            outputs[f"{logical_id}DomainName"] = {
+                "Value": {"Fn::GetAtt": [logical_id, "DomainName"]}
+            }
+
     return {
         "AWSTemplateFormatVersion": "2010-09-09",
-        "Description": "CloudCompass Builder generated change-set preview. Lambda/API code is in the CDK archive.",
-        "Resources": resources or {
-            "CloudCompassPreviewMetadata": {
-                "Type": "AWS::CloudFormation::WaitConditionHandle"
-            }
-        },
+        "Description": "CloudCompass Builder change-set preview. Authoritative artifact is the generated CDK zip.",
+        "Resources": resources
+        or {"CloudCompassPreviewMetadata": {"Type": "AWS::CloudFormation::WaitConditionHandle"}},
         "Outputs": outputs,
     }
 

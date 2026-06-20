@@ -1,0 +1,25 @@
+self.{{ logical_id | snake }}_origin_bucket = s3.Bucket(
+    self,
+    "{{ logical_id }}OriginBucket",
+    encryption=s3.BucketEncryption.S3_MANAGED,
+    block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+    enforce_ssl=True,
+    versioned={{ config.get("versioned", True) | bool_literal }},
+    removal_policy=RemovalPolicy.RETAIN,
+)
+self.{{ logical_id | snake }} = cloudfront.Distribution(
+    self,
+    "{{ logical_id }}",
+    default_root_object="index.html",
+    default_behavior=cloudfront.BehaviorOptions(
+        origin=origins.S3BucketOrigin.with_origin_access_control(
+            self.{{ logical_id | snake }}_origin_bucket
+        ),
+        viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+    ),
+)
+CfnOutput(
+    self,
+    "{{ logical_id }}DomainName",
+    value=self.{{ logical_id | snake }}.distribution_domain_name,
+)

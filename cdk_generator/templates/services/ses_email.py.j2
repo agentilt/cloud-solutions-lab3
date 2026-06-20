@@ -1,0 +1,14 @@
+self.{{ logical_id | snake }} = ses.ConfigurationSet(self, "{{ logical_id }}")
+{% if config.get("sender_email") %}
+self.{{ logical_id | snake }}_identity = ses.EmailIdentity(
+    self,
+    "{{ logical_id }}Identity",
+    identity=ses.Identity.email({{ config.get("sender_email") | quote }}),
+    configuration_set=self.{{ logical_id | snake }},
+)
+{% endif %}
+CfnOutput(
+    self,
+    "{{ logical_id }}Name",
+    value=self.{{ logical_id | snake }}.configuration_set_name,
+)

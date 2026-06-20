@@ -34,3 +34,24 @@ def test_rendering_is_deterministic():
     second = generate_cdk_project(spec)
 
     assert first == second
+
+
+def test_full_web_app_renders_all_service_constructs():
+    """The expanded catalog (CloudFront, Cognito, SES) renders + compiles."""
+    result = generate_cdk_project(_load_example("full_web_app.json"))
+    stack = result["files"]["cloudcompass_generated/generated_stack.py"]
+    for needle in (
+        "cloudfront.Distribution(",
+        "origins.S3BucketOrigin.with_origin_access_control(",
+        "cognito.UserPool(",
+        "ses.ConfigurationSet(",
+        "ses.EmailIdentity(",
+        "lambda_.Function(",
+        "dynamodb.TableV2(",
+        "s3.Bucket(",
+    ):
+        assert needle in stack, f"missing {needle!r} in generated stack"
+    # conditional imports must only pull what the spec uses
+    for path, source in result["files"].items():
+        if path.endswith(".py"):
+            compile(source, path, "exec")

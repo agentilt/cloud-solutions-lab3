@@ -13,7 +13,9 @@ TEMPLATE_REGISTRY: dict[str, str] = {
     "s3_bucket": "services/s3_bucket.py.j2",
     "lambda_api": "services/lambda_api.py.j2",
     "dynamodb_table": "services/dynamodb_table.py.j2",
-    # Future catalog additions: cloudfront_site, cognito_user_pool, ses_email.
+    "cloudfront_site": "services/cloudfront_site.py.j2",
+    "cognito_user_pool": "services/cognito_user_pool.py.j2",
+    "ses_email": "services/ses_email.py.j2",
 }
 
 # Project-level scaffolding templates (always rendered, regardless of services).

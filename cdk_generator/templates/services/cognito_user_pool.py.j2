@@ -1,0 +1,25 @@
+self.{{ logical_id | snake }} = cognito.UserPool(
+    self,
+    "{{ logical_id }}",
+    self_sign_up_enabled={{ config.get("self_sign_up", True) | bool_literal }},
+    sign_in_aliases=cognito.SignInAliases(email=True),
+    auto_verify=cognito.AutoVerifiedAttrs(email=True),
+    password_policy=cognito.PasswordPolicy(
+        min_length=10,
+        require_digits=True,
+        require_lowercase=True,
+        require_uppercase=True,
+    ),
+    account_recovery=cognito.AccountRecovery.EMAIL_ONLY,
+    removal_policy=RemovalPolicy.RETAIN,
+)
+self.{{ logical_id | snake }}_client = self.{{ logical_id | snake }}.add_client(
+    "{{ logical_id }}Client",
+    auth_flows=cognito.AuthFlow(user_password=True, user_srp=True),
+)
+CfnOutput(self, "{{ logical_id }}Id", value=self.{{ logical_id | snake }}.user_pool_id)
+CfnOutput(
+    self,
+    "{{ logical_id }}ClientId",
+    value=self.{{ logical_id | snake }}_client.user_pool_client_id,
+)

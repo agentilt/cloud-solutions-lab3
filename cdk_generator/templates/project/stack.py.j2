@@ -1,9 +1,26 @@
+{% set types = services | map(attribute="type") | list %}
 from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack
+{% if "s3_bucket" in types or "cloudfront_site" in types %}
+from aws_cdk import aws_s3 as s3
+{% endif %}
+{% if "lambda_api" in types %}
 from aws_cdk import aws_apigatewayv2 as apigwv2
 from aws_cdk import aws_apigatewayv2_integrations as integrations
-from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_lambda as lambda_
-from aws_cdk import aws_s3 as s3
+{% endif %}
+{% if "dynamodb_table" in types %}
+from aws_cdk import aws_dynamodb as dynamodb
+{% endif %}
+{% if "cloudfront_site" in types %}
+from aws_cdk import aws_cloudfront as cloudfront
+from aws_cdk import aws_cloudfront_origins as origins
+{% endif %}
+{% if "cognito_user_pool" in types %}
+from aws_cdk import aws_cognito as cognito
+{% endif %}
+{% if "ses_email" in types %}
+from aws_cdk import aws_ses as ses
+{% endif %}
 from constructs import Construct
 
 

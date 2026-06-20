@@ -1,0 +1,41 @@
+{
+  "project_name": "bakery-platform",
+  "pattern": "serverless-web-application",
+  "deployment_boundary": "change-set-only",
+  "budget_monthly_usd": 200,
+  "services": [
+    {
+      "type": "cloudfront_site",
+      "logical_id": "Website",
+      "config": { "versioned": true }
+    },
+    {
+      "type": "cognito_user_pool",
+      "logical_id": "Customers",
+      "config": { "self_sign_up": true }
+    },
+    {
+      "type": "lambda_api",
+      "logical_id": "OrderApi",
+      "config": {
+        "runtime": "python3.12",
+        "routes": ["GET /orders", "POST /orders"]
+      }
+    },
+    {
+      "type": "dynamodb_table",
+      "logical_id": "OrdersTable",
+      "config": { "partition_key": "pk", "sort_key": "sk" }
+    },
+    {
+      "type": "ses_email",
+      "logical_id": "Receipts",
+      "config": { "sender_email": "receipts@example.com" }
+    },
+    {
+      "type": "s3_bucket",
+      "logical_id": "AssetsBucket",
+      "config": { "versioned": true }
+    }
+  ]
+}
