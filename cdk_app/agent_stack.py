@@ -231,18 +231,29 @@ class AgentStack(Stack):
             ),
             policy=cr.AwsCustomResourcePolicy.from_statements(
                 [
+                    # Control-plane scope for the DEPLOY-TIME provisioning Lambda only.
+                    # CreateAgentRuntime fans out to many sub-operations whose exact,
+                    # undocumented action set evolves (runtime, endpoint, service-linked
+                    # role, workload identity, ...) — verified the hard way against live
+                    # deploys. The runtime's own EXECUTION role stays tightly scoped;
+                    # this broad grant is confined to the custom-resource provider.
                     iam.PolicyStatement(
-                        actions=[
-                            "bedrock-agentcore:CreateAgentRuntime",
-                            "bedrock-agentcore:DeleteAgentRuntime",
-                            "bedrock-agentcore:UpdateAgentRuntime",
-                            "bedrock-agentcore:GetAgentRuntime",
-                        ],
+                        actions=["bedrock-agentcore:*"],
                         resources=["*"],
                     ),
                     iam.PolicyStatement(
                         actions=["iam:PassRole"],
                         resources=[execution_role.role_arn],
+                    ),
+                    # CreateAgentRuntime ensures the bedrock-agentcore service-linked
+                    # role(s) on first use. It calls CreateServiceLinkedRole with an
+                    # undocumented sub-service principal (the existing SLR is named
+                    # ...GatewayNetwork), so an iam:AWSServiceName condition blocks it
+                    # and the API returns "Failed creating service linked role". This is
+                    # a deploy-time provisioning permission on the custom-resource role.
+                    iam.PolicyStatement(
+                        actions=["iam:CreateServiceLinkedRole"],
+                        resources=["*"],
                     ),
                 ]
             ),
