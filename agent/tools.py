@@ -118,13 +118,15 @@ def save_project_state_impl(
     metadata: dict | None = None,
 ) -> dict:
     metadata = metadata or {}
-    expression_names = {"#status": "status"}
+    # `status` and `ttl` are DynamoDB reserved keywords — both must be escaped via
+    # expression-attribute-names or UpdateItem fails with a ValidationException.
+    expression_names = {"#status": "status", "#ttl": "ttl"}
     expression_values: dict[str, Any] = {
         ":status": status,
         ":updated_at": _now(),
         ":ttl": int((datetime.now(UTC) + timedelta(days=14)).timestamp()),
     }
-    update_parts = ["#status = :status", "updated_at = :updated_at", "ttl = :ttl"]
+    update_parts = ["#status = :status", "updated_at = :updated_at", "#ttl = :ttl"]
 
     for index, (key, value) in enumerate(metadata.items()):
         name_token = f"#m{index}"

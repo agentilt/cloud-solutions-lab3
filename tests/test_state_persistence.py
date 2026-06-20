@@ -61,3 +61,21 @@ def test_save_project_state_writes_no_floats(monkeypatch):
         },
     )
     assert not _has_float(captured["ExpressionAttributeValues"])
+
+
+def test_save_project_state_escapes_reserved_keywords(monkeypatch):
+    """`status` and `ttl` are DynamoDB reserved keywords; both must be escaped or
+    UpdateItem fails with a ValidationException (caught only on a real table)."""
+    tools = _tools(monkeypatch)
+    captured: dict = {}
+
+    class FakeTable:
+        def update_item(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(tools, "_table", lambda: FakeTable())
+    tools.save_project_state_impl("u", "p", "DESIGNING", {"prompt": "x"})
+    expr = captured["UpdateExpression"]
+    names = captured["ExpressionAttributeNames"]
+    assert "#status = :status" in expr and names["#status"] == "status"
+    assert "#ttl = :ttl" in expr and names["#ttl"] == "ttl"
