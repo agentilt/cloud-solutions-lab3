@@ -1,0 +1,24 @@
+flowchart TD
+  U[User] --> CF[CloudFront static SPA]
+  CF --> COG[Cognito Hosted UI / PKCE]
+  CF --> API[API Gateway HTTP API + JWT authorizer]
+  API --> L[Project Lambda]
+  L --> DDB[(DynamoDB project state)]
+  L --> AC[Bedrock AgentCore Runtime]
+  subgraph Agent [Strands model-driven app]
+    O[Orchestrator agent - Sonnet]
+    RA[Requirements sub-agent]
+    AD[Architecture designer - structured output]
+    O -->|analyze_requirements| RA
+    O -->|design_architecture| AD
+  end
+  AC --> O
+  O -.guardrail.-> GR[Bedrock Guardrail]
+  AD --> KB[(Bedrock KB over S3 Vectors)]
+  O -->|query_reference_guidance| KB
+  O -->|generate_and_store_cdk| GEN[Deterministic cdk_generator]
+  GEN --> S3[(S3 artifact bucket)]
+  O -->|run_validation_build| CB[CodeBuild validation]
+  O -->|estimate_run_cost| PR[Price List API + rate model]
+  O -->|create_change_set| CFN[CloudFormation change set - preview only]
+  O --> DDB
