@@ -117,31 +117,58 @@ class AgentStack(Stack):
         )
         log_group.grant_write(execution_role)
 
-        # Register the AgentCore runtime via the control-plane API.
-        # The team can adjust agentRuntimeName / protocolConfiguration to taste.
-        runtime_name = "lab3_agent"
+        # Register the AgentCore runtime via the control-plane API. No AgentCore L2
+        # construct exists yet, so we drive bedrock-agentcore-control directly.
+        #   - install_latest_aws_sdk=True: the control-plane API is newer than the
+        #     boto3 bundled into the custom-resource Lambda, so we must fetch it.
+        #   - unique-per-stack name: CreateAgentRuntime requires a unique name; a
+        #     fixed "lab3_agent" collides on any second deploy in the account/region.
+        #   - on_update (UpdateAgentRuntime): without it, AwsCustomResource replays
+        #     on_create for updates and CreateAgentRuntime fails on the existing name,
+        #     so changed agent code would never roll out. The image_uri carries the
+        #     asset hash, so a code change flips the update call and ships the new
+        #     container as a new runtime version.
+        runtime_name = f"cloudcompass_{self.node.addr[:8]}"
+
+        # One source of truth shared by create + update so they cannot drift.
+        agent_artifact = {"containerConfiguration": {"containerUri": image.image_uri}}
+        network_configuration = {"networkMode": "PUBLIC"}
+        protocol_configuration = {"serverProtocol": "HTTP"}  # BedrockAgentCoreApp serves HTTP/8080
+        environment_variables = {
+            "DATA_TABLE_NAME": data_table.table_name,
+            "EVENT_BUS_NAME": event_bus.event_bus_name,
+            "DATA_BUCKET_NAME": data_bucket.bucket_name,
+            "VALIDATION_PROJECT_NAME": validation_project.project_name,
+            "CFN_EXECUTION_ROLE_ARN": cloudformation_execution_role.role_arn,
+        }
+
         create_runtime = cr.AwsCustomResource(
             self,
             "CreateAgentRuntime",
+            install_latest_aws_sdk=True,
             on_create=cr.AwsSdkCall(
                 service="bedrock-agentcore-control",
                 action="CreateAgentRuntime",
                 parameters={
                     "agentRuntimeName": runtime_name,
-                    "agentRuntimeArtifact": {
-                        "containerConfiguration": {
-                            "containerUri": image.image_uri,
-                        },
-                    },
+                    "agentRuntimeArtifact": agent_artifact,
                     "roleArn": execution_role.role_arn,
-                    "networkConfiguration": {"networkMode": "PUBLIC"},
-                    "environmentVariables": {
-                        "DATA_TABLE_NAME": data_table.table_name,
-                        "EVENT_BUS_NAME": event_bus.event_bus_name,
-                        "DATA_BUCKET_NAME": data_bucket.bucket_name,
-                        "VALIDATION_PROJECT_NAME": validation_project.project_name,
-                        "CFN_EXECUTION_ROLE_ARN": cloudformation_execution_role.role_arn,
-                    },
+                    "networkConfiguration": network_configuration,
+                    "protocolConfiguration": protocol_configuration,
+                    "environmentVariables": environment_variables,
+                },
+                physical_resource_id=cr.PhysicalResourceId.from_response("agentRuntimeId"),
+            ),
+            on_update=cr.AwsSdkCall(
+                service="bedrock-agentcore-control",
+                action="UpdateAgentRuntime",
+                parameters={
+                    "agentRuntimeId": cr.PhysicalResourceIdReference(),
+                    "agentRuntimeArtifact": agent_artifact,
+                    "roleArn": execution_role.role_arn,
+                    "networkConfiguration": network_configuration,
+                    "protocolConfiguration": protocol_configuration,
+                    "environmentVariables": environment_variables,
                 },
                 physical_resource_id=cr.PhysicalResourceId.from_response("agentRuntimeId"),
             ),
