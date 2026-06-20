@@ -58,6 +58,18 @@ def _json_bytes(value: dict) -> bytes:
     return json.dumps(value, indent=2, sort_keys=True, default=_json_default).encode("utf-8")
 
 
+def _dynamo_safe(value):
+    """Recursively convert floats to Decimal — boto3's DynamoDB resource rejects
+    floats. Cost estimates and budgets carry floats, so persist them safely."""
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, list):
+        return [_dynamo_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _dynamo_safe(item) for key, item in value.items()}
+    return value
+
+
 def _project_key(user_id: str, project_id: str) -> dict[str, str]:
     return {"pk": f"USER#{user_id}", "sk": f"PROJECT#{project_id}"}
 
@@ -117,7 +129,7 @@ def save_project_state_impl(
         name_token = f"#m{index}"
         value_token = f":m{index}"
         expression_names[name_token] = key
-        expression_values[value_token] = value
+        expression_values[value_token] = _dynamo_safe(value)
         update_parts.append(f"{name_token} = {value_token}")
 
     _table().update_item(
@@ -133,6 +145,12 @@ def save_project_state_impl(
 def save_project_state(user_id: str, project_id: str, status: str, metadata: dict) -> dict:
     """Persist a CloudCompass project workflow state in DynamoDB."""
     return save_project_state_impl(user_id, project_id, status, metadata)
+
+
+def get_project_state_impl(user_id: str, project_id: str) -> dict:
+    """Read the current persisted state for a project ({} if it does not exist)."""
+    response = _table().get_item(Key=_project_key(user_id, project_id))
+    return response.get("Item") or {}
 
 
 def query_reference_guidance_impl(query: str, workload_type: str) -> dict:
