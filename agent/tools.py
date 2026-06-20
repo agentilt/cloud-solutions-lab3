@@ -210,39 +210,94 @@ def write_cdk_project(user_id: str, project_id: str, files: dict[str, str]) -> d
     return write_cdk_project_impl(user_id, project_id, files)
 
 
-def get_service_pricing_impl(region: str, usage_profile: dict | None = None) -> dict:
-    usage_profile = usage_profile or {}
-    estimate = {
-        "unit": "infrastructure-generation-run",
-        "estimated_cost_usd": "0.35-1.25",
-        "currency": "USD",
-        "line_items": [
-            {"component": "Bedrock model inference", "estimate_usd": "0.15-0.65"},
-            {"component": "AgentCore runtime and gateway calls", "estimate_usd": "0.05-0.20"},
-            {"component": "CodeBuild validation minutes", "estimate_usd": "0.05-0.25"},
-            {"component": "S3, DynamoDB, Lambda, API Gateway, logs", "estimate_usd": "0.10-0.15"},
-        ],
-        "assumptions": {
-            "region": region,
-            "prompt_tokens": usage_profile.get("prompt_tokens", 4000),
-            "output_tokens": usage_profile.get("output_tokens", 6000),
-            "codebuild_minutes": usage_profile.get("codebuild_minutes", 3),
-        },
-        "pricing_source": "curated-estimate",
-    }
+# Curated unit rates (USD, us-east-1, 2026). Bedrock rates are Sonnet-class
+# on-demand ($3/1M in, $15/1M out). CodeBuild's per-minute rate is confirmed from
+# the Price List API at runtime when reachable. Kept transparent so the cost the
+# agent reports is computed from the usage profile, not a hand-waved range.
+_PRICE_RATES = {
+    "bedrock_input_per_1k_usd": 0.003,
+    "bedrock_output_per_1k_usd": 0.015,
+    "codebuild_small_per_min_usd": 0.005,
+    "platform_overhead_per_run_usd": 0.01,  # Lambda + HTTP API + DynamoDB + S3 + logs
+}
+
+
+def _confirm_codebuild_rate_per_min(default_rate: float) -> tuple[float, str]:
+    """Best-effort: read the CodeBuild small build-minute rate from the Price List
+    API. Returns (rate, source); falls back to the curated rate when offline."""
     try:
         pricing = boto3.client("pricing", region_name="us-east-1")
-        pricing.get_products(
-            ServiceCode="AmazonDynamoDB",
+        response = pricing.get_products(
+            ServiceCode="AWSCodeBuild",
             Filters=[
-                {"Type": "TERM_MATCH", "Field": "location", "Value": "US East (N. Virginia)"}
+                {"Type": "TERM_MATCH", "Field": "location", "Value": "US East (N. Virginia)"},
+                {"Type": "TERM_MATCH", "Field": "computeType", "Value": "BUILD_GENERAL1_SMALL"},
             ],
             MaxResults=1,
         )
-        estimate["pricing_source"] = "aws-price-list-api-plus-curated-model"
+        price_list = response.get("PriceList", [])
+        if price_list:
+            product = json.loads(price_list[0])
+            on_demand = product["terms"]["OnDemand"]
+            dimensions = next(iter(on_demand.values()))["priceDimensions"]
+            rate = float(next(iter(dimensions.values()))["pricePerUnit"]["USD"])
+            if rate > 0:
+                return rate, "aws-price-list-api"
     except Exception:
         pass
-    return estimate
+    return default_rate, "curated-rate-offline"
+
+
+def get_service_pricing_impl(region: str, usage_profile: dict | None = None) -> dict:
+    usage_profile = usage_profile or {}
+    prompt_tokens = int(usage_profile.get("prompt_tokens", 4000))
+    output_tokens = int(usage_profile.get("output_tokens", 6000))
+    codebuild_minutes = float(usage_profile.get("codebuild_minutes", 3))
+
+    rates = dict(_PRICE_RATES)
+    codebuild_rate, pricing_source = _confirm_codebuild_rate_per_min(
+        rates["codebuild_small_per_min_usd"]
+    )
+    rates["codebuild_small_per_min_usd"] = round(codebuild_rate, 6)
+
+    model_cost = (
+        prompt_tokens / 1000 * rates["bedrock_input_per_1k_usd"]
+        + output_tokens / 1000 * rates["bedrock_output_per_1k_usd"]
+    )
+    codebuild_cost = codebuild_minutes * codebuild_rate
+    platform_cost = rates["platform_overhead_per_run_usd"]
+    total = round(model_cost + codebuild_cost + platform_cost, 4)
+
+    return {
+        "unit": "infrastructure-generation-run",
+        "currency": "USD",
+        "estimated_cost_usd": total,
+        "line_items": [
+            {
+                "component": "Bedrock model inference",
+                "driver": f"{prompt_tokens} input + {output_tokens} output tokens",
+                "estimate_usd": round(model_cost, 4),
+            },
+            {
+                "component": "CodeBuild validation",
+                "driver": f"{codebuild_minutes} small build-minute(s)",
+                "estimate_usd": round(codebuild_cost, 4),
+            },
+            {
+                "component": "Lambda, API Gateway, DynamoDB, S3, logs",
+                "driver": "per run, small fixed overhead",
+                "estimate_usd": round(platform_cost, 4),
+            },
+        ],
+        "assumptions": {
+            "region": region,
+            "prompt_tokens": prompt_tokens,
+            "output_tokens": output_tokens,
+            "codebuild_minutes": codebuild_minutes,
+        },
+        "rates_usd": rates,
+        "pricing_source": pricing_source,
+    }
 
 
 @tool
