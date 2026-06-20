@@ -65,7 +65,11 @@ class AgentStack(Stack):
         # Pull the agent image from ECR
         image.repository.grant_pull(execution_role)
 
-        # Bedrock model invocation — scope to a specific model family if known
+        # Bedrock model invocation. Strands' default is a Sonnet-class *inference
+        # profile* (e.g. us.anthropic.claude-sonnet-4-6); Haiku is used for cheap
+        # subtasks when BEDROCK_FAST_MODEL_ID is set. Invoking via an inference
+        # profile requires permission on BOTH the profile ARN and the underlying
+        # foundation-model ARNs across the regions the profile routes to.
         execution_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -73,7 +77,11 @@ class AgentStack(Stack):
                     "bedrock:InvokeModelWithResponseStream",
                 ],
                 resources=[
-                    f"arn:aws:bedrock:{self.region}::foundation-model/anthropic.claude-*",
+                    # Foundation models (region-agnostic; profiles route cross-region).
+                    f"arn:{self.partition}:bedrock:*::foundation-model/anthropic.claude-*",
+                    # Cross-region / application inference profiles in this account.
+                    f"arn:{self.partition}:bedrock:{self.region}:{self.account}"
+                    ":inference-profile/*.anthropic.claude-*",
                 ],
             )
         )
