@@ -5,6 +5,7 @@ from aws_cdk import CfnOutput, Duration, Stack
 from aws_cdk import aws_apigatewayv2 as apigwv2
 from aws_cdk import aws_apigatewayv2_authorizers as apigwv2_auth
 from aws_cdk import aws_apigatewayv2_integrations as apigwv2_integ
+from aws_cdk import aws_cloudwatch as cloudwatch
 from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_iam as iam
@@ -138,4 +139,33 @@ class ApiStack(Stack):
 
         self.http_api = http_api
 
+        # Observability: a CloudWatch dashboard over the request tier. Combined with
+        # X-Ray active tracing (above) and one-month log retention, this is the
+        # operational view for the API + agent-invoker path. AgentCore runtime
+        # traces/metrics are emitted to CloudWatch by the platform.
+        functions = {
+            "project": project_fn,
+            "agent_invoker": agent_invoker_fn,
+            "upload_url": upload_url_fn,
+        }
+        dashboard = cloudwatch.Dashboard(self, "ObservabilityDashboard")
+        dashboard.add_widgets(
+            cloudwatch.GraphWidget(
+                title="Lambda invocations",
+                left=[fn.metric_invocations() for fn in functions.values()],
+                width=12,
+            ),
+            cloudwatch.GraphWidget(
+                title="Lambda errors",
+                left=[fn.metric_errors() for fn in functions.values()],
+                width=12,
+            ),
+            cloudwatch.GraphWidget(
+                title="Lambda duration (p95)",
+                left=[fn.metric_duration(statistic="p95") for fn in functions.values()],
+                width=12,
+            ),
+        )
+
         CfnOutput(self, "ApiUrl", value=http_api.url or "")
+        CfnOutput(self, "DashboardName", value=dashboard.dashboard_name)

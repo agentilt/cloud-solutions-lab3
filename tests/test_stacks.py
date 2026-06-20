@@ -188,6 +188,26 @@ def test_agent_can_retrieve_from_knowledge_base():
     assert "bedrock:Retrieve" in str(agent.find_resources("AWS::IAM::Policy"))
 
 
+def test_agent_has_guardrail_with_prompt_attack_filter():
+    agent = _synth_all()["agent"]
+    agent.resource_count_is("AWS::Bedrock::Guardrail", 1)
+    agent.has_resource_properties(
+        "AWS::Bedrock::Guardrail",
+        Match.object_like(
+            {
+                "ContentPolicyConfig": {
+                    "FiltersConfig": Match.array_with([Match.object_like({"Type": "PROMPT_ATTACK"})])
+                }
+            }
+        ),
+    )
+    assert "bedrock:ApplyGuardrail" in str(agent.find_resources("AWS::IAM::Policy"))
+
+
+def test_api_has_observability_dashboard():
+    _synth_all()["api"].resource_count_is("AWS::CloudWatch::Dashboard", 1)
+
+
 def test_no_wildcard_actions_on_any_stack():
     """Rubric: no bare `*` IAM actions ANYWHERE — covers all 7 stacks, not just Api.
 

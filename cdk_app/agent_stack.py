@@ -19,6 +19,7 @@ Notes:
 from pathlib import Path
 
 from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack
+from aws_cdk import aws_bedrock as bedrock
 from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_codebuild as codebuild
 from aws_cdk import aws_ecr_assets as ecr_assets
@@ -93,6 +94,39 @@ class AgentStack(Stack):
             iam.PolicyStatement(actions=["bedrock:Retrieve"], resources=[knowledge_base_arn])
         )
 
+        # Bedrock Guardrail: prompt-injection + content safety on the orchestrator.
+        # agent/agent.py attaches it to every model call via BEDROCK_GUARDRAIL_ID.
+        guardrail = bedrock.CfnGuardrail(
+            self,
+            "AgentGuardrail",
+            name=f"cloudcompass-{self.node.addr[:8]}",
+            description="Prompt-injection + content safety for the CloudCompass orchestrator.",
+            blocked_input_messaging="Your request was blocked by CloudCompass safety guardrails.",
+            blocked_outputs_messaging="The response was blocked by CloudCompass safety guardrails.",
+            content_policy_config=bedrock.CfnGuardrail.ContentPolicyConfigProperty(
+                filters_config=[
+                    # PROMPT_ATTACK is input-only (output_strength must be NONE).
+                    bedrock.CfnGuardrail.ContentFilterConfigProperty(
+                        type="PROMPT_ATTACK", input_strength="HIGH", output_strength="NONE"
+                    ),
+                    bedrock.CfnGuardrail.ContentFilterConfigProperty(
+                        type="HATE", input_strength="HIGH", output_strength="HIGH"
+                    ),
+                    bedrock.CfnGuardrail.ContentFilterConfigProperty(
+                        type="VIOLENCE", input_strength="MEDIUM", output_strength="MEDIUM"
+                    ),
+                    bedrock.CfnGuardrail.ContentFilterConfigProperty(
+                        type="MISCONDUCT", input_strength="MEDIUM", output_strength="MEDIUM"
+                    ),
+                ],
+            ),
+        )
+        execution_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["bedrock:ApplyGuardrail"], resources=[guardrail.attr_guardrail_arn]
+            )
+        )
+
         # App data access (tight)
         data_table.grant_read_write_data(execution_role)
         data_bucket.grant_read_write(execution_role)
@@ -156,6 +190,8 @@ class AgentStack(Stack):
             "VALIDATION_PROJECT_NAME": validation_project.project_name,
             "CFN_EXECUTION_ROLE_ARN": cloudformation_execution_role.role_arn,
             "KNOWLEDGE_BASE_ID": knowledge_base_id,
+            "BEDROCK_GUARDRAIL_ID": guardrail.attr_guardrail_id,
+            "BEDROCK_GUARDRAIL_VERSION": "DRAFT",
         }
 
         create_runtime = cr.AwsCustomResource(
