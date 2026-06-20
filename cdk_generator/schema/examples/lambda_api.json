@@ -1,0 +1,24 @@
+{
+  "project_name": "orders-api",
+  "pattern": "serverless-web-application",
+  "deployment_boundary": "change-set-only",
+  "services": [
+    {
+      "type": "lambda_api",
+      "logical_id": "OrdersApi",
+      "config": {
+        "runtime": "python3.12",
+        "handler": "handler.main",
+        "routes": ["GET /orders", "POST /orders"]
+      }
+    },
+    {
+      "type": "dynamodb_table",
+      "logical_id": "OrdersTable",
+      "config": {
+        "partition_key": "pk",
+        "sort_key": "sk"
+      }
+    }
+  ]
+}

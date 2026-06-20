@@ -1,0 +1,4 @@
+# Runtime deps for the deterministic CDK generator (WS2).
+# Deliberately minimal + no AWS SDK — keeps the generator pure and testable.
+jinja2>=3.1.0
+jsonschema>=4.21.0

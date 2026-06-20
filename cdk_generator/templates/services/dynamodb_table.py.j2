@@ -1,0 +1,21 @@
+self.{{ logical_id | snake }} = dynamodb.TableV2(
+    self,
+    "{{ logical_id }}",
+    partition_key=dynamodb.Attribute(
+        name={{ config.get("partition_key", "pk") | quote }},
+        type=dynamodb.AttributeType.STRING,
+    ),
+{% if config.get("sort_key") %}
+    sort_key=dynamodb.Attribute(
+        name={{ config.get("sort_key") | quote }},
+        type=dynamodb.AttributeType.STRING,
+    ),
+{% endif %}
+    billing=dynamodb.Billing.on_demand(),
+    encryption=dynamodb.TableEncryptionV2.aws_managed_key(),
+    point_in_time_recovery_specification=dynamodb.PointInTimeRecoverySpecification(
+        point_in_time_recovery_enabled=True,
+    ),
+    removal_policy=RemovalPolicy.RETAIN,
+)
+CfnOutput(self, "{{ logical_id }}Name", value=self.{{ logical_id | snake }}.table_name)

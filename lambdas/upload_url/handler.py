@@ -14,9 +14,28 @@ BUCKET = os.environ["DATA_BUCKET_NAME"]
 PRESIGN_TTL_SECONDS = 300
 
 
+def _user_id(event: dict) -> str | None:
+    claims = (
+        event.get("requestContext", {})
+        .get("authorizer", {})
+        .get("jwt", {})
+        .get("claims", {})
+    )
+    return claims.get("sub")
+
+
 def handler(event, _context):
+    user_id = _user_id(event)
+    if not user_id:
+        return {
+            "statusCode": 401,
+            "headers": {"content-type": "application/json"},
+            "body": json.dumps({"error": "missing authenticated user claims"}),
+        }
+
     body = json.loads(event.get("body") or "{}")
-    key = body.get("key") or f"uploads/{uuid.uuid4()}"
+    requested_key = (body.get("key") or str(uuid.uuid4())).lstrip("/")
+    key = f"users/{user_id}/uploads/{requested_key}"
     content_type = body.get("contentType", "application/octet-stream")
 
     url = S3.generate_presigned_url(

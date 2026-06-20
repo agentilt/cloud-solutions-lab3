@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+import aws_cdk as cdk
+
+from cloudcompass_generated.generated_stack import {{ stack_class }}
+
+
+app = cdk.App()
+
+{{ stack_class }}(app, "{{ stack_class }}")
+
+app.synth()

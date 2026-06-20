@@ -1,0 +1,35 @@
+self.{{ logical_id | snake }}_function = lambda_.Function(
+    self,
+    "{{ logical_id }}Function",
+    runtime=lambda_.Runtime.{{ config.get("runtime", "python3.12") | runtime_enum }},
+    architecture=lambda_.Architecture.ARM_64,
+    handler="index.handler",
+    code=lambda_.Code.from_inline(
+        "import json\n\n"
+        "def handler(event, context):\n"
+        "    return {\n"
+        "        'statusCode': 200,\n"
+        "        'headers': {'content-type': 'application/json'},\n"
+        "        'body': json.dumps({'ok': True, 'service': '{{ logical_id }}'})\n"
+        "    }\n"
+    ),
+    timeout=Duration.seconds(10),
+    memory_size=256,
+    tracing=lambda_.Tracing.ACTIVE,
+)
+self.{{ logical_id | snake }}_api = apigwv2.HttpApi(
+    self,
+    "{{ logical_id }}HttpApi",
+)
+self.{{ logical_id | snake }}_integration = integrations.HttpLambdaIntegration(
+    "{{ logical_id }}Integration",
+    self.{{ logical_id | snake }}_function,
+)
+{% for route in config.get("routes", ["GET /"]) %}
+self.{{ logical_id | snake }}_api.add_routes(
+    path={{ route | route_path | quote }},
+    methods=[apigwv2.HttpMethod.{{ route | route_method }}],
+    integration=self.{{ logical_id | snake }}_integration,
+)
+{% endfor %}
+CfnOutput(self, "{{ logical_id }}Endpoint", value=self.{{ logical_id | snake }}_api.url or "")

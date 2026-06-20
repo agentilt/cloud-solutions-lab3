@@ -1,80 +1,69 @@
-# Lab 3 — Cloud Solutions Architectures
+# CloudCompass Builder
 
-Scaffold for the group final project. The architecture skeleton is generic — the group picks the use case and fills in the domain logic. The agentic component (Strands Agent on Amazon Bedrock AgentCore) is wired end-to-end so the team can iterate on tools and prompts without rebuilding plumbing.
+CloudCompass Builder is a governed multi-agent AWS infrastructure generator.
+It accepts a natural-language infrastructure prompt and produces a validated,
+cost-estimated, deployable Python CDK project plus a CloudFormation change-set
+preview. The MVP stops at `CHANGE_SET_READY`; it does not execute the change set.
 
-## What's provided
+The project follows the source-of-truth handoff in
+`docs/cloudcompass_builder_handoff.md`.
 
-- Account-agnostic Python CDK project (3 stacks: storage, agent, api)
-- API Gateway → Lambda → Bedrock AgentCore `InvokeAgentRuntime` path
-- Strands Agent stub with two `@tool` functions (placeholders to replace)
-- S3 bucket + DynamoDB table + custom EventBridge bus for app data/events
-- Least-privilege IAM scaffolding (no `*` actions)
-- ARM64 Dockerfile for the AgentCore runtime image
-- Report template covering every rubric section
-- CDK unit-test scaffold
+## What Is Implemented
 
-## What the group still needs to decide
+- Account-agnostic Python CDK app for the CloudCompass platform.
+- Cognito Hosted UI authentication.
+- CloudFront + private S3 static frontend.
+- API Gateway HTTP API with Cognito JWT authorization.
+- Lambda project API: `POST /projects`, `GET /projects/{project_id}`.
+- Bedrock AgentCore runtime container for a Strands multi-agent app.
+- CloudCompass-specific Strands tools for S3 artifacts, DynamoDB state,
+  CodeBuild validation, pricing estimate, and CloudFormation change-set preview.
+- Deterministic Python CDK generator for S3, Lambda/API Gateway, and DynamoDB.
+- CodeBuild validation project for generated CDK archives.
+- Tests for generator contracts, Lambda request handling, and CDK assertions.
+- Architecture and report drafts under `docs/`.
 
-- The use case / problem domain
-- The agent's system prompt and the actual `@tool` implementations
-- The data model in DynamoDB (PK/SK + GSIs based on access patterns)
-- Whether to add async fan-out (SQS/EventBridge → workers), Step Functions, etc.
-- Frontend (Amplify, static S3 site, or none — API alone is a valid entry point)
+## Repository Layout
 
-## Repository layout
-
-```
+```text
 .
-├── app.py                      # CDK entry point
-├── cdk.json                    # CDK config (account-agnostic)
-├── requirements.txt            # CDK deps
-├── requirements-dev.txt        # test / lint deps
-├── cdk_app/                    # CDK stacks
-│   ├── storage_stack.py        # S3 + DynamoDB + EventBridge bus
-│   ├── api_stack.py            # API Gateway + Lambda entry point
-│   └── agent_stack.py          # ECR image + AgentCore runtime + IAM
-├── lambdas/                    # Lambda function source
-│   ├── upload_url/             # presigned S3 upload URL (optional pattern)
-│   └── agent_invoker/          # calls AgentCore InvokeAgentRuntime
-├── agent/                      # Strands Agent (deployed to AgentCore)
-│   ├── agent.py                # entry point (BedrockAgentCoreApp)
-│   ├── tools.py                # @tool-decorated functions (stubs)
-│   ├── requirements.txt
-│   └── Dockerfile              # ARM64 image
-├── docs/
-│   ├── architecture.md         # workflow + diagram description
-│   └── report.md               # final report (export to PDF for submission)
-└── tests/
-    └── test_stacks.py          # CDK assertions
+├── app.py
+├── cdk_app/                  # CloudCompass platform CDK stacks
+├── agent/                    # Strands app deployed to AgentCore
+├── cdk_generator/            # Deterministic generated-project renderer
+├── frontend/                 # Static authenticated UI
+├── lambdas/                  # API Lambda handlers
+├── docs/                     # Architecture, report, handoff
+└── tests/                    # CDK, generator, Lambda tests
 ```
 
-## Quickstart
+## Local Setup
 
-```bash
-# Make sure the CDK CLI is current (library tracks latest schema).
-npm install -g aws-cdk@latest   # needs Node 22+ (24 LTS recommended)
-
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-
-# Bootstrap CDK once per account/region
-cdk bootstrap
-
-cdk synth
-cdk deploy --all
+```powershell
+C:\Users\sebog\miniconda3\envs\carrefour\python.exe -m pip install -r requirements.txt -r requirements-dev.txt -r cdk_generator\requirements.txt
+C:\Users\sebog\miniconda3\envs\carrefour\python.exe -m pytest
 ```
 
-> If `cdk synth` complains about a "Cloud assembly schema version mismatch", your CDK CLI is older than the library. Upgrade with `npm install -g aws-cdk@latest`.
+On this Windows environment, `cdk synth` may need the explicit Python executable:
 
-The project is account-agnostic: it reads `CDK_DEFAULT_ACCOUNT` / `CDK_DEFAULT_REGION` from the caller env (set by `aws configure` / `AWS_PROFILE`).
+```powershell
+cdk synth --app "C:\Users\sebog\miniconda3\envs\carrefour\python.exe app.py"
+```
 
-## Rubric checklist
+If jsii cannot create its temporary runtime inside the sandbox, run synth outside
+the sandbox or from a normal terminal.
 
-- [ ] Agentic component — Strands + AgentCore deployed, ≥2 tools doing meaningful AWS work
-- [ ] Account-agnostic CDK, no manual steps
-- [ ] Least-privilege IAM (no wildcards), encryption at rest + in transit
-- [ ] Architecture diagram (`docs/architecture.md` + exported PNG)
-- [ ] Cost estimation per meaningful unit, fixed vs variable (`docs/report.md`)
-- [ ] Limitations / assumptions section (`docs/report.md`)
-- [ ] Report exported to `docs/report.pdf` for submission
+## Demo Prompt
+
+```text
+Create the AWS infrastructure for a small online bakery. I need a static website, customer login, an order API, a database for orders, email receipts, logs, and a monthly budget under $200.
+```
+
+Expected MVP result:
+
+- Structured requirements and architecture summary.
+- Generated Python CDK project archive in S3.
+- Validation/security summary.
+- Cost estimate per infrastructure-generation run.
+- CloudFormation change-set ARN or stored preview template.
+- Final status: `CHANGE_SET_READY`.

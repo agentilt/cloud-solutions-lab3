@@ -1,0 +1,27 @@
+{
+  "project_name": "online-bakery",
+  "pattern": "serverless-web-application",
+  "deployment_boundary": "change-set-only",
+  "budget_monthly_usd": 200,
+  "services": [
+    {
+      "type": "s3_bucket",
+      "logical_id": "SiteBucket",
+      "config": { "block_public_access": true }
+    },
+    {
+      "type": "lambda_api",
+      "logical_id": "OrderApi",
+      "config": {
+        "runtime": "python3.12",
+        "handler": "handler.main",
+        "routes": ["GET /orders", "POST /orders"]
+      }
+    },
+    {
+      "type": "dynamodb_table",
+      "logical_id": "OrdersTable",
+      "config": { "partition_key": "pk", "sort_key": "sk" }
+    }
+  ]
+}
