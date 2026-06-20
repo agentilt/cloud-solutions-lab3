@@ -159,11 +159,28 @@ def test_agent_role_can_create_but_not_execute_change_sets():
     assert "cloudformation:ExecuteChangeSet" not in joined
 
 
-def test_no_wildcard_actions_on_lambda_roles():
-    api = _synth_all()["api"]
-    policies = api.find_resources("AWS::IAM::Policy")
-    for logical_id, policy in policies.items():
-        for stmt in policy["Properties"]["PolicyDocument"]["Statement"]:
+def _all_policy_statements(template):
+    """Every IAM statement in a stack: standalone policies + role-inline policies."""
+    statements = []
+    for _lid, policy in template.find_resources("AWS::IAM::Policy").items():
+        statements += policy["Properties"]["PolicyDocument"]["Statement"]
+    for _lid, role in template.find_resources("AWS::IAM::Role").items():
+        for inline in role["Properties"].get("Policies", []):
+            statements += inline["PolicyDocument"]["Statement"]
+    return statements
+
+
+def test_no_wildcard_actions_on_any_stack():
+    """Rubric: no bare `*` IAM actions ANYWHERE — covers all 7 stacks, not just Api.
+
+    Resource wildcards (resources=["*"]) are intentionally allowed for the few
+    actions that have no resource-level scoping (pricing:GetProducts, the
+    AgentCore control-plane provider, the generated-stack CloudFormation preview
+    role) and are reviewed in agent_stack/validation_stack; this guards the
+    rubric's hard line, which is wildcard *actions*.
+    """
+    for name, template in _synth_all().items():
+        for stmt in _all_policy_statements(template):
             action = stmt.get("Action")
             actions = action if isinstance(action, list) else [action]
-            assert "*" not in actions, f"wildcard action found in {logical_id}: {stmt}"
+            assert "*" not in actions, f"wildcard action in {name} stack: {stmt}"
