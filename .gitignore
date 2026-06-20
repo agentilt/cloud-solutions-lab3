@@ -22,3 +22,32 @@ cdk.context.json
 .vscode/
 .idea/
 .DS_Store
+
+# AI tool artifacts
+# Claude Code
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.claude-trace/
+# Cursor
+.cursor/
+.cursorrules
+.cursorignore
+# Aider
+.aider*
+.aider.chat.history.md
+.aider.input.history
+.aider.tags.cache.v*/
+# GitHub Copilot
+.copilot/
+# Windsurf / Codeium
+.windsurf/
+.codeium/
+# Continue / Cody / Tabnine
+.continue/
+.cody/
+.tabnine/
+# Generic AI / LLM scratch
+.ai/
+.llm/
+*.ai.md
