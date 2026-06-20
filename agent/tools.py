@@ -25,6 +25,7 @@ DATA_TABLE_NAME = os.environ.get("DATA_TABLE_NAME")
 DATA_BUCKET_NAME = os.environ.get("DATA_BUCKET_NAME")
 VALIDATION_PROJECT_NAME = os.environ.get("VALIDATION_PROJECT_NAME")
 CFN_EXECUTION_ROLE_ARN = os.environ.get("CFN_EXECUTION_ROLE_ARN")
+KNOWLEDGE_BASE_ID = os.environ.get("KNOWLEDGE_BASE_ID")
 
 DYNAMODB = boto3.resource("dynamodb")
 S3 = boto3.client("s3")
@@ -154,25 +155,46 @@ def get_project_state_impl(user_id: str, project_id: str) -> dict:
 
 
 def query_reference_guidance_impl(query: str, workload_type: str) -> dict:
+    """Retrieve approved guidance from the Bedrock Knowledge Base (S3 Vectors).
+
+    Falls back to curated guidance when the KB is not configured, has not been
+    ingested yet, or the Retrieve call fails — so the agent always gets grounding.
+    """
     fallback = {
         "source": "curated-fallback",
         "workload_type": workload_type,
         "guidance": [
-            "Use S3 and CloudFront for static assets; keep the origin bucket private.",
+            "Use S3 and CloudFront (OAC) for static assets; keep the origin bucket private.",
             "Use Cognito for customer authentication and JWT-protected HTTP APIs.",
             "Use Lambda, HTTP API, and DynamoDB for a small serverless order service.",
             "Stop at a CloudFormation change set; do not execute deployment automatically.",
         ],
     }
-    try:
-        response = S3.get_object(
-            Bucket=_bucket_name(),
-            Key="knowledge/cloudcompass_patterns.json",
-        )
-        corpus = json.loads(response["Body"].read().decode("utf-8"))
-        return {"source": "s3-guidance-corpus", "query": query, "matches": corpus[:5]}
-    except Exception:
+    if not KNOWLEDGE_BASE_ID:
         return fallback
+    try:
+        response = boto3.client("bedrock-agent-runtime").retrieve(
+            knowledgeBaseId=KNOWLEDGE_BASE_ID,
+            retrievalQuery={"text": query or workload_type},
+            retrievalConfiguration={"vectorSearchConfiguration": {"numberOfResults": 5}},
+        )
+        matches = [
+            {
+                "text": result.get("content", {}).get("text", ""),
+                "location": result.get("location", {}),
+                "score": result.get("score"),
+            }
+            for result in response.get("retrievalResults", [])
+        ]
+        if matches:
+            return {
+                "source": "bedrock-knowledge-base",
+                "workload_type": workload_type,
+                "matches": matches,
+            }
+    except Exception:
+        pass
+    return fallback
 
 
 @tool

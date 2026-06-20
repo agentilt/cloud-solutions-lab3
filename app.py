@@ -8,6 +8,7 @@ from cdk_app.agent_stack import AgentStack
 from cdk_app.api_stack import ApiStack
 from cdk_app.auth_stack import AuthStack
 from cdk_app.frontend_stack import FrontendDeploymentStack, FrontendHostingStack
+from cdk_app.knowledge_stack import KnowledgeStack
 from cdk_app.storage_stack import StorageStack
 from cdk_app.validation_stack import ValidationStack
 
@@ -37,6 +38,8 @@ validation = ValidationStack(
     artifact_bucket=storage.data_bucket,
 )
 
+knowledge = KnowledgeStack(app, f"{APP_NAME}-Knowledge", env=env)
+
 agent = AgentStack(
     app,
     f"{APP_NAME}-Agent",
@@ -46,6 +49,8 @@ agent = AgentStack(
     data_bucket=storage.data_bucket,
     validation_project=validation.validation_project,
     cloudformation_execution_role=validation.cloudformation_execution_role,
+    knowledge_base_id=knowledge.knowledge_base_id,
+    knowledge_base_arn=knowledge.knowledge_base_arn,
 )
 
 api = ApiStack(

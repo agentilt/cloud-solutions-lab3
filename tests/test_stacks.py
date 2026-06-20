@@ -5,6 +5,7 @@ from cdk_app.agent_stack import AgentStack
 from cdk_app.api_stack import ApiStack
 from cdk_app.auth_stack import AuthStack
 from cdk_app.frontend_stack import FrontendDeploymentStack, FrontendHostingStack
+from cdk_app.knowledge_stack import KnowledgeStack
 from cdk_app.storage_stack import StorageStack
 from cdk_app.validation_stack import ValidationStack
 
@@ -23,6 +24,7 @@ def _synth_all():
         "TestValidation",
         artifact_bucket=storage.data_bucket,
     )
+    knowledge = KnowledgeStack(app, "TestKnowledge")
     agent = AgentStack(
         app,
         "TestAgent",
@@ -31,6 +33,8 @@ def _synth_all():
         data_bucket=storage.data_bucket,
         validation_project=validation.validation_project,
         cloudformation_execution_role=validation.cloudformation_execution_role,
+        knowledge_base_id=knowledge.knowledge_base_id,
+        knowledge_base_arn=knowledge.knowledge_base_arn,
     )
     api = ApiStack(
         app,
@@ -56,6 +60,7 @@ def _synth_all():
         "frontend_hosting": Template.from_stack(frontend_hosting),
         "auth": Template.from_stack(auth),
         "validation": Template.from_stack(validation),
+        "knowledge": Template.from_stack(knowledge),
         "agent": Template.from_stack(agent),
         "api": Template.from_stack(api),
         "frontend_deployment": Template.from_stack(frontend_deployment),
@@ -168,6 +173,19 @@ def _all_policy_statements(template):
         for inline in role["Properties"].get("Policies", []):
             statements += inline["PolicyDocument"]["Statement"]
     return statements
+
+
+def test_knowledge_base_over_s3_vectors():
+    kb = _synth_all()["knowledge"]
+    kb.resource_count_is("AWS::Bedrock::KnowledgeBase", 1)
+    kb.resource_count_is("AWS::Bedrock::DataSource", 1)
+    kb.resource_count_is("AWS::S3Vectors::VectorBucket", 1)
+    kb.resource_count_is("AWS::S3Vectors::Index", 1)
+
+
+def test_agent_can_retrieve_from_knowledge_base():
+    agent = _synth_all()["agent"]
+    assert "bedrock:Retrieve" in str(agent.find_resources("AWS::IAM::Policy"))
 
 
 def test_no_wildcard_actions_on_any_stack():

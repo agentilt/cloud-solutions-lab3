@@ -43,6 +43,8 @@ class AgentStack(Stack):
         data_bucket: s3.IBucket,
         validation_project: codebuild.IProject,
         cloudformation_execution_role: iam.IRole,
+        knowledge_base_id: str,
+        knowledge_base_arn: str,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -84,6 +86,11 @@ class AgentStack(Stack):
                     ":inference-profile/*.anthropic.claude-*",
                 ],
             )
+        )
+
+        # RAG: retrieve approved guidance from the Bedrock Knowledge Base.
+        execution_role.add_to_policy(
+            iam.PolicyStatement(actions=["bedrock:Retrieve"], resources=[knowledge_base_arn])
         )
 
         # App data access (tight)
@@ -148,6 +155,7 @@ class AgentStack(Stack):
             "DATA_BUCKET_NAME": data_bucket.bucket_name,
             "VALIDATION_PROJECT_NAME": validation_project.project_name,
             "CFN_EXECUTION_ROLE_ARN": cloudformation_execution_role.role_arn,
+            "KNOWLEDGE_BASE_ID": knowledge_base_id,
         }
 
         create_runtime = cr.AwsCustomResource(
