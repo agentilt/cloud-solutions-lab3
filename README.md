@@ -78,6 +78,23 @@ cdk bootstrap                        # once per account/region
 cdk deploy --all --require-approval never
 ```
 
+### Deploy without the frontend (new accounts / no CloudFront)
+
+Brand-new AWS accounts often can't create CloudFront distributions yet (error:
+*"Your account must be verified before you can add new CloudFront resources"*).
+CloudFront only serves the static UI — the graded agentic core does **not** need
+it. Skip the frontend with a context flag to deploy the 6 core stacks anywhere:
+
+```bash
+cdk deploy --all --require-approval never -c deployFrontend=false
+```
+
+This deploys `Storage`, `Auth`, `Validation`, `Knowledge`, `Agent`, `Api` (no
+`FrontendHosting`/`FrontendDeployment`, no CloudFront). Drive the agent by
+invoking the runtime directly (see **Demo** below). To get the UI later, request
+CloudFront access via a free AWS Support case ("Account and billing") and deploy
+again without the flag.
+
 **Account prerequisites (one-time):**
 
 1. **Bedrock model access** — in the Bedrock console (deploy region), enable the

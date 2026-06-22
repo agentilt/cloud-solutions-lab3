@@ -21,14 +21,26 @@ env = cdk.Environment(
     region=os.environ.get("CDK_DEFAULT_REGION", "us-east-1"),
 )
 
+# The CloudFront frontend only serves the static UI. Skip it with
+# `cdk deploy --all -c deployFrontend=false` to deploy the graded agentic core on
+# accounts not yet verified for CloudFront (new accounts) — the agent is then
+# driven by invoking the runtime directly (see README).
+deploy_frontend = str(app.node.try_get_context("deployFrontend")).lower() not in (
+    "false",
+    "0",
+    "no",
+)
+
 storage = StorageStack(app, f"{APP_NAME}-Storage", env=env)
-frontend_hosting = FrontendHostingStack(app, f"{APP_NAME}-FrontendHosting", env=env)
+frontend_hosting = (
+    FrontendHostingStack(app, f"{APP_NAME}-FrontendHosting", env=env) if deploy_frontend else None
+)
 
 auth = AuthStack(
     app,
     f"{APP_NAME}-Auth",
     env=env,
-    frontend_url=frontend_hosting.frontend_url,
+    frontend_url=frontend_hosting.frontend_url if frontend_hosting else None,
 )
 
 validation = ValidationStack(
@@ -64,16 +76,17 @@ api = ApiStack(
     agent_runtime_arn=agent.runtime_arn,
 )
 
-FrontendDeploymentStack(
-    app,
-    f"{APP_NAME}-FrontendDeployment",
-    env=env,
-    site_bucket=frontend_hosting.site_bucket,
-    distribution=frontend_hosting.distribution,
-    api_url=api.http_api.url or "",
-    user_pool=auth.user_pool,
-    user_pool_client=auth.user_pool_client,
-    user_pool_domain_base_url=auth.user_pool_domain.base_url(),
-)
+if frontend_hosting is not None:
+    FrontendDeploymentStack(
+        app,
+        f"{APP_NAME}-FrontendDeployment",
+        env=env,
+        site_bucket=frontend_hosting.site_bucket,
+        distribution=frontend_hosting.distribution,
+        api_url=api.http_api.url or "",
+        user_pool=auth.user_pool,
+        user_pool_client=auth.user_pool_client,
+        user_pool_domain_base_url=auth.user_pool_domain.base_url(),
+    )
 
 app.synth()

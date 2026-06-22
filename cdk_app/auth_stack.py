@@ -10,10 +10,18 @@ class AuthStack(Stack):
         scope: Construct,
         construct_id: str,
         *,
-        frontend_url: str,
+        frontend_url: str | None = None,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # The CloudFront URL is only available when the frontend is deployed; the
+        # localhost callbacks let auth work without it (e.g. on accounts not yet
+        # verified for CloudFront — see README "Deploy without the frontend").
+        oauth_urls = ([frontend_url] if frontend_url else []) + [
+            "http://localhost:8080/",
+            "http://localhost:3000/",
+        ]
 
         self.user_pool = cognito.UserPool(
             self,
@@ -45,8 +53,8 @@ class AuthStack(Stack):
                     cognito.OAuthScope.EMAIL,
                     cognito.OAuthScope.PROFILE,
                 ],
-                callback_urls=[frontend_url, "http://localhost:8080/", "http://localhost:3000/"],
-                logout_urls=[frontend_url, "http://localhost:8080/", "http://localhost:3000/"],
+                callback_urls=oauth_urls,
+                logout_urls=oauth_urls,
             ),
         )
 
