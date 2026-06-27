@@ -14,6 +14,7 @@ DATA_TABLE_NAME = os.environ["DATA_TABLE_NAME"]
 AGENTCORE = boto3.client("bedrock-agentcore")
 DYNAMODB = boto3.resource("dynamodb")
 S3 = boto3.client("s3")
+LAMBDA = boto3.client("lambda")
 TABLE = DYNAMODB.Table(DATA_TABLE_NAME)
 
 
@@ -105,6 +106,19 @@ def _invoke_agent(user_id: str, project_id: str, prompt: str, region: str) -> di
     return parsed
 
 
+def _mark_failed(user_id: str, project_id: str, message: str) -> None:
+    TABLE.update_item(
+        Key={"pk": f"USER#{user_id}", "sk": f"PROJECT#{project_id}"},
+        UpdateExpression="SET #status = :status, error_message = :error, updated_at = :updated",
+        ExpressionAttributeNames={"#status": "status"},
+        ExpressionAttributeValues={
+            ":status": "FAILED",
+            ":error": message,
+            ":updated": _now(),
+        },
+    )
+
+
 def _handle_create(event: dict, user_id: str) -> dict:
     body = json.loads(event.get("body") or "{}")
     prompt = (body.get("prompt") or "").strip()
@@ -115,31 +129,42 @@ def _handle_create(event: dict, user_id: str) -> dict:
     project_id = str(uuid.uuid4())
     _put_received_project(user_id, project_id, prompt, region)
 
-    try:
-        result = _invoke_agent(user_id, project_id, prompt, region)
-    except Exception as exc:  # noqa: BLE001 - Lambda boundary should convert failures.
-        TABLE.update_item(
-            Key={"pk": f"USER#{user_id}", "sk": f"PROJECT#{project_id}"},
-            UpdateExpression="SET #status = :status, error_message = :error, updated_at = :updated",
-            ExpressionAttributeNames={"#status": "status"},
-            ExpressionAttributeValues={
-                ":status": "FAILED",
-                ":error": str(exc),
-                ":updated": _now(),
-            },
-        )
-        return _response(502, {"project_id": project_id, "status": "FAILED", "error": str(exc)})
+    # The agent run takes 1-2 min, which exceeds the API Gateway (30s) and request
+    # Lambda timeouts. Kick it off on a background ("Event") invocation of this same
+    # function and return immediately; the SPA polls GET /projects/{id} until the
+    # agent persists a terminal status (CHANGE_SET_READY / FAILED).
+    LAMBDA.invoke(
+        FunctionName=os.environ["AWS_LAMBDA_FUNCTION_NAME"],
+        InvocationType="Event",
+        Payload=json.dumps(
+            {
+                "task": "run_agent",
+                "user_id": user_id,
+                "project_id": project_id,
+                "prompt": prompt,
+                "region": region,
+            }
+        ).encode("utf-8"),
+    )
 
     latest = _read_project(user_id, project_id) or {}
-    return _response(
-        202,
-        {
-            "project_id": project_id,
-            "status": latest.get("status", result.get("status", "RECEIVED")),
-            "project": latest,
-            "agent_result": result,
-        },
-    )
+    return _response(202, {"project_id": project_id, "status": "RECEIVED", "project": latest})
+
+
+def _run_agent_task(event: dict) -> dict:
+    """Background worker: run the long agent call, recording failures.
+
+    Returns normally even on error so Lambda does not retry the async invocation
+    (a retry would start a second, billable agent run). The agent persists its own
+    progress and final state to DynamoDB via its save_project_state tool.
+    """
+    user_id = event["user_id"]
+    project_id = event["project_id"]
+    try:
+        _invoke_agent(user_id, project_id, event["prompt"], event["region"])
+    except Exception as exc:  # noqa: BLE001 - background boundary should swallow + record.
+        _mark_failed(user_id, project_id, str(exc))
+    return {"ok": True}
 
 
 def _handle_get(event: dict, user_id: str) -> dict:
@@ -154,6 +179,11 @@ def _handle_get(event: dict, user_id: str) -> dict:
 
 
 def handler(event, _context):
+    # Background worker path: this function invokes itself ("Event") to run the
+    # long agent call outside the synchronous API request.
+    if event.get("task") == "run_agent":
+        return _run_agent_task(event)
+
     user_id = _user_id(event)
     if not user_id:
         return _response(401, {"error": "missing authenticated user claims"})

@@ -168,6 +168,34 @@ async function refreshProject() {
   renderProject(project);
 }
 
+const TERMINAL_STATES = ["CHANGE_SET_READY", "FAILED"];
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function pollUntilDone({intervalMs = 3000, maxMs = 300000} = {}) {
+  // The agent runs in the background (~1-2 min); poll GET /projects/{id} until it
+  // persists a terminal status, refreshing the UI on each tick.
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    await delay(intervalMs);
+    let project;
+    try {
+      project = await apiFetch(`/projects/${activeProjectId}`);
+    } catch (error) {
+      setMessage(error.message);
+      continue;
+    }
+    renderProject(project);
+    if (TERMINAL_STATES.includes(project.status)) {
+      setMessage(project.status === "FAILED" ? project.error_message || "Generation failed." : "");
+      return project.status;
+    }
+    setMessage(`Working… ${project.status || "RECEIVED"}`);
+  }
+  setMessage("Still running — this is taking longer than usual. It may finish shortly.");
+  return null;
+}
+
 async function submitProject(event) {
   event.preventDefault();
   setMessage("");
@@ -182,8 +210,9 @@ async function submitProject(event) {
       }),
     });
     activeProjectId = response.project_id;
-    renderProject(response.project || response.agent_result || response);
-    await refreshProject();
+    renderProject(response.project || response);
+    setMessage("Working… RECEIVED");
+    await pollUntilDone();
   } catch (error) {
     setMessage(error.message);
   } finally {

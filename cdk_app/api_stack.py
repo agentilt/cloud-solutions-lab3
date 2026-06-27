@@ -1,7 +1,7 @@
 """Authenticated HTTP API and Lambda entry points."""
 from pathlib import Path
 
-from aws_cdk import CfnOutput, Duration, Stack
+from aws_cdk import ArnFormat, CfnOutput, Duration, Stack
 from aws_cdk import aws_apigatewayv2 as apigwv2
 from aws_cdk import aws_apigatewayv2_authorizers as apigwv2_auth
 from aws_cdk import aws_apigatewayv2_integrations as apigwv2_integ
@@ -62,7 +62,7 @@ class ApiStack(Stack):
         agent_invoker_fn.add_to_role_policy(
             iam.PolicyStatement(
                 actions=["bedrock-agentcore:InvokeAgentRuntime"],
-                resources=[agent_runtime_arn],
+                resources=[agent_runtime_arn, f"{agent_runtime_arn}/runtime-endpoint/*"],
             )
         )
 
@@ -76,14 +76,35 @@ class ApiStack(Stack):
                 "DATA_BUCKET_NAME": data_bucket.bucket_name,
                 "DATA_TABLE_NAME": data_table.table_name,
             },
-            **common_lambda_kwargs,
+            # The API request returns in <1s, but ProjectFn invokes itself
+            # asynchronously to run the 1-2 min agent call past the request timeout;
+            # that background path needs a long timeout.
+            **{**common_lambda_kwargs, "timeout": Duration.seconds(900)},
         )
         data_table.grant_read_write_data(project_fn)
         data_bucket.grant_read(project_fn)
+        # Allow ProjectFn to invoke itself for the async background run. We grant on a
+        # name-pattern ARN rather than project_fn.grant_invoke(project_fn), which would
+        # create a Role -> Function -> Role dependency cycle (the function already
+        # depends on its default policy).
+        project_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["lambda:InvokeFunction"],
+                resources=[
+                    Stack.of(self).format_arn(
+                        service="lambda",
+                        resource="function",
+                        resource_name=f"{Stack.of(self).stack_name}-ProjectFn*",
+                        arn_format=ArnFormat.COLON_RESOURCE_NAME,
+                    )
+                ],
+            )
+        )
+        project_fn.configure_async_invoke(retry_attempts=0)  # never duplicate a billable run
         project_fn.add_to_role_policy(
             iam.PolicyStatement(
                 actions=["bedrock-agentcore:InvokeAgentRuntime"],
-                resources=[agent_runtime_arn],
+                resources=[agent_runtime_arn, f"{agent_runtime_arn}/runtime-endpoint/*"],
             )
         )
 
