@@ -194,6 +194,14 @@ feature) and is separate from `cdk_app/`, which deploys CloudCompass itself.
 Test suite: 34 passed / 2 skipped; both generated example projects pass real
 `cdk synth`.
 
+**Runs entirely on AWS.** At runtime nothing executes locally — the agent runs on
+Bedrock AgentCore, the API on API Gateway + Lambda, state in DynamoDB, etc. Docker
+is a *build-time* tool only: AgentCore runs container images, so `cdk deploy`
+builds the agent image once and pushes it to ECR (AWS), where AgentCore runs it
+(analogous to needing Node.js for the CDK CLI). Reviewing the code, running the
+tests, and `cdk synth` (inspecting all 8 CloudFormation templates) need **no
+Docker**; only an actual `cdk deploy` does.
+
 ## 10. As-Deployed Evidence and Lessons
 
 **Deployed (us-east-1, account 777170294579):** all 8 stacks `CREATE_COMPLETE`;

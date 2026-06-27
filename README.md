@@ -53,25 +53,44 @@ workflow in [`docs/architecture.md`](docs/architecture.md) and the report.
 └── tests/                # CDK, generator, Lambda, tool tests
 ```
 
-## Quickstart
+## The solution runs entirely on AWS
+
+At runtime nothing runs locally: the agent runs as a container on **Bedrock
+AgentCore**, the API on **API Gateway + Lambda**, state in **DynamoDB**, etc.
+**Docker is only a *build-time* tool** — AgentCore runs container images, so
+`cdk deploy` builds the agent image once and pushes it to **ECR (AWS)**, where
+AgentCore runs it. This is like needing Node.js to run the CDK CLI: build
+tooling, not the running system.
+
+What needs what:
+
+| Task | Python + CDK CLI | Docker | AWS account |
+|---|:---:|:---:|:---:|
+| Review code / run tests / `cdk synth` (inspect the IaC) | ✅ | — | — |
+| `cdk deploy` (build the agent image + provision) | ✅ | ✅ | ✅ |
+| The deployed solution at runtime | — | — | ✅ (100%) |
+
+## Quickstart — review & validate (no Docker, no AWS account)
 
 Prerequisites: **Python 3.12+**, **Node 20/22/24** (not 26) + the CDK CLI
-(`npm i -g aws-cdk`), **Docker** running (for the agent image), and AWS
-credentials configured.
+(`npm i -g aws-cdk`).
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -r requirements.txt -r requirements-dev.txt -r cdk_generator/requirements.txt
 
-pytest                               # 34 passed / 2 skipped
-cdk synth                            # synthesizes all 8 stacks
+pytest                               # 34 passed / 2 skipped — no Docker needed
+cdk synth                            # synthesizes all 8 stacks — no Docker needed
 
 # To also run the generated-project cdk synth checks:
 RUN_SLOW_CDK_TESTS=1 pytest tests/generator/test_synth_validity.py
 ```
 
 ## Deploy
+
+Additionally needs **Docker running** (to build the agent image) and **AWS
+credentials configured**.
 
 ```bash
 cdk bootstrap                        # once per account/region
